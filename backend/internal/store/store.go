@@ -118,3 +118,13 @@ func (s *Store) StatsSince(cutoff time.Time) ([]StatRow, error) {
 	}
 	return out, rows.Err()
 }
+
+// SpendSince returns total estimated cost of calls at or after the cutoff.
+func (s *Store) SpendSince(cutoff time.Time) (float64, error) {
+	var v float64
+	err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(est_cost_usd), 0) FROM calls WHERE ts >= ?`,
+		cutoff.Unix(),
+	).Scan(&v)
+	return v, err
+}
