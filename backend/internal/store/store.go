@@ -43,7 +43,13 @@ func Open(path string) (*Store, error) {
 	// WAL + busy_timeout keep concurrent stream finalizations from tripping
 	// "database is locked"; a single open connection serializes writes.
 	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", path)
-	db, err := sql.Open("sqlite", dsn)
+	return OpenDSN("sqlite", dsn)
+}
+
+// OpenDSN opens any database/sql driver speaking the sqlite dialect (local
+// "sqlite", remote "libsql" for Turso) and ensures the base schema.
+func OpenDSN(driver, dsn string) (*Store, error) {
+	db, err := sql.Open(driver, dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -212,4 +218,79 @@ func (s *Store) CacheSavings() (hits int64, saved float64, err error) {
 		`SELECT COUNT(*), COALESCE(SUM(saved_usd), 0) FROM calls WHERE cache_hit = 1`,
 	).Scan(&hits, &saved)
 	return
+}
+
+// EnsureSyncSchema prepares a REMOTE store: dedupe column on calls plus the
+// budget snapshot table the cloud API reads limits from.
+func (s *Store) EnsureSyncSchema() error {
+	_, _ = s.db.Exec(`ALTER TABLE calls ADD COLUMN local_id INTEGER`)
+	if _, err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_calls_local_id ON calls(local_id)`); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS budget_snapshot (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		daily_warn REAL NOT NULL, daily_hard REAL NOT NULL,
+		weekly_warn REAL NOT NULL, weekly_hard REAL NOT NULL,
+		monthly_warn REAL NOT NULL, monthly_hard REAL NOT NULL,
+		updated_at INTEGER NOT NULL
+	)`)
+	return err
+}
+
+// InsertSynced writes one local row into a remote store, deduped on local_id.
+func (s *Store) InsertSynced(c Call) error {
+	_, err := s.db.Exec(
+		`INSERT OR IGNORE INTO calls
+		 (local_id, ts, model, routed_from, input_tokens, output_tokens,
+		  cache_read_tokens, cache_write_tokens, est_cost_usd, latency_ms, status, cache_hit, saved_usd)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.TS.Unix(), c.Model, c.RoutedFrom,
+		c.Usage.Input, c.Usage.Output, c.Usage.CacheRead, c.Usage.CacheWrite,
+		c.CostUSD, c.LatencyMS, c.Status, boolToInt(c.CacheHit), c.SavedUSD,
+	)
+	return err
+}
+
+func (s *Store) LastSyncedID() (int64, error) {
+	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS sync_state (id INTEGER PRIMARY KEY CHECK (id = 1), last_synced INTEGER NOT NULL)`); err != nil {
+		return 0, err
+	}
+	var v int64
+	err := s.db.QueryRow(`SELECT last_synced FROM sync_state WHERE id = 1`).Scan(&v)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return v, err
+}
+
+func (s *Store) SetLastSyncedID(id int64) error {
+	_, err := s.db.Exec(
+		`INSERT INTO sync_state (id, last_synced) VALUES (1, ?)
+		 ON CONFLICT(id) DO UPDATE SET last_synced = excluded.last_synced`, id)
+	return err
+}
+
+func (s *Store) WriteBudgetSnapshot(dw, dh, ww, wh, mw, mh float64) error {
+	_, err := s.db.Exec(
+		`INSERT INTO budget_snapshot (id, daily_warn, daily_hard, weekly_warn, weekly_hard, monthly_warn, monthly_hard, updated_at)
+		 VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET daily_warn=excluded.daily_warn, daily_hard=excluded.daily_hard,
+		   weekly_warn=excluded.weekly_warn, weekly_hard=excluded.weekly_hard,
+		   monthly_warn=excluded.monthly_warn, monthly_hard=excluded.monthly_hard,
+		   updated_at=excluded.updated_at`,
+		dw, dh, ww, wh, mw, mh, time.Now().Unix())
+	return err
+}
+
+func (s *Store) ReadBudgetSnapshot() (dw, dh, ww, wh, mw, mh float64, ok bool, err error) {
+	err = s.db.QueryRow(
+		`SELECT daily_warn, daily_hard, weekly_warn, weekly_hard, monthly_warn, monthly_hard FROM budget_snapshot WHERE id = 1`,
+	).Scan(&dw, &dh, &ww, &wh, &mw, &mh)
+	if err == sql.ErrNoRows {
+		return 0, 0, 0, 0, 0, 0, false, nil
+	}
+	if err != nil {
+		return 0, 0, 0, 0, 0, 0, false, err
+	}
+	return dw, dh, ww, wh, mw, mh, true, nil
 }
