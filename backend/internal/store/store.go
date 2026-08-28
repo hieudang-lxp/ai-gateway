@@ -66,6 +66,15 @@ CREATE TABLE IF NOT EXISTS calls (
 	status             INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_calls_ts ON calls(ts);
+CREATE TABLE IF NOT EXISTS cache (
+	key          TEXT PRIMARY KEY,
+	created      INTEGER NOT NULL,          -- unix seconds
+	status       INTEGER NOT NULL,
+	content_type TEXT    NOT NULL,
+	body         BLOB    NOT NULL,
+	cost_usd     REAL    NOT NULL,
+	model        TEXT    NOT NULL
+);
 `
 
 func (s *Store) Insert(r Record) error {
@@ -127,4 +136,46 @@ func (s *Store) SpendSince(cutoff time.Time) (float64, error) {
 		cutoff.Unix(),
 	).Scan(&v)
 	return v, err
+}
+
+// CachedResponse is one stored upstream response, replayable byte-for-byte.
+type CachedResponse struct {
+	Status      int
+	ContentType string
+	Body        []byte
+	CostUSD     float64
+	Model       string
+}
+
+func (s *Store) CachePut(key string, c CachedResponse) error {
+	_, err := s.db.Exec(
+		`INSERT INTO cache (key, created, status, content_type, body, cost_usd, model)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(key) DO UPDATE SET created=excluded.created, status=excluded.status,
+		   content_type=excluded.content_type, body=excluded.body,
+		   cost_usd=excluded.cost_usd, model=excluded.model`,
+		key, time.Now().Unix(), c.Status, c.ContentType, c.Body, c.CostUSD, c.Model,
+	)
+	return err
+}
+
+// CacheGet returns the entry if it exists and is younger than maxAge.
+// Stale entries are deleted lazily.
+func (s *Store) CacheGet(key string, maxAge time.Duration) (*CachedResponse, bool, error) {
+	var c CachedResponse
+	var created int64
+	err := s.db.QueryRow(
+		`SELECT created, status, content_type, body, cost_usd, model FROM cache WHERE key = ?`, key,
+	).Scan(&created, &c.Status, &c.ContentType, &c.Body, &c.CostUSD, &c.Model)
+	if err == sql.ErrNoRows {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if time.Since(time.Unix(created, 0)) > maxAge {
+		_, _ = s.db.Exec(`DELETE FROM cache WHERE key = ?`, key)
+		return nil, false, nil
+	}
+	return &c, true, nil
 }
