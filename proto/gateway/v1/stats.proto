@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package gateway.v1;
+
+option go_package = "github.com/hieudang-lxp/ai-gateway/backend/gen/gateway/v1;gatewayv1";
+
+service StatsService {
+  rpc Overview(OverviewRequest) returns (OverviewResponse);
+  rpc SpendSeries(SpendSeriesRequest) returns (SpendSeriesResponse);
+  rpc ModelBreakdown(ModelBreakdownRequest) returns (ModelBreakdownResponse);
+  rpc RecentCalls(RecentCallsRequest) returns (RecentCallsResponse);
+}
+
+message OverviewRequest {}
+
+message BudgetWindow {
+  double spent_usd = 1;
+  double warn_usd = 2; // 0 = disabled
+  double hard_usd = 3; // 0 = disabled
+}
+
+message OverviewResponse {
+  BudgetWindow today = 1;
+  BudgetWindow week = 2;
+  BudgetWindow month = 3;
+  double cache_saved_usd = 4;
+  int64 cache_hits = 5;
+  int64 total_calls = 6;
+}
+
+message SpendSeriesRequest {
+  int32 days = 1; // <=0 -> 30
+}
+
+message SpendPoint {
+  string date = 1; // YYYY-MM-DD in Asia/Ho_Chi_Minh
+  double cost_usd = 2;
+  int64 calls = 3;
+}
+
+message SpendSeriesResponse {
+  repeated SpendPoint points = 1;
+}
+
+message ModelBreakdownRequest {
+  int32 days = 1; // <=0 -> 30
+}
+
+message ModelRow {
+  string model = 1;
+  int64 calls = 2;
+  int64 input_tokens = 3;
+  int64 output_tokens = 4;
+  int64 cache_read_tokens = 5;
+  int64 cache_write_tokens = 6;
+  double cost_usd = 7;
+}
+
+message ModelBreakdownResponse {
+  repeated ModelRow rows = 1;
+}
+
+message RecentCallsRequest {
+  int32 limit = 1;     // <=0 -> 50, max 200
+  int64 before_id = 2; // pagination cursor; 0 = latest
+}
+
+message Call {
+  int64 id = 1;
+  int64 ts_unix = 2;
+  string model = 3;
+  string routed_from = 4;
+  int64 input_tokens = 5;
+  int64 output_tokens = 6;
+  double cost_usd = 7;
+  int64 latency_ms = 8;
+  int32 status = 9;
+  bool cache_hit = 10;
+  double saved_usd = 11;
+}
+
+message RecentCallsResponse {
+  repeated Call calls = 1;
+}

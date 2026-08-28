@@ -1,0 +1,79 @@
+package store
+
+import "time"
+
+// CostEvent is a (timestamp, cost) pair for time-series bucketing done in Go
+// (keeps timezone logic out of SQL).
+type CostEvent struct {
+	TS      int64
+	CostUSD float64
+}
+
+func (s *Store) CostEvents(cutoff time.Time) ([]CostEvent, error) {
+	rows, err := s.db.Query(
+		`SELECT ts, est_cost_usd FROM calls WHERE ts >= ? ORDER BY ts ASC`, cutoff.Unix())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CostEvent
+	for rows.Next() {
+		var e CostEvent
+		if err := rows.Scan(&e.TS, &e.CostUSD); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// Call is a Record with its row id, for pagination and sync.
+type Call struct {
+	ID int64
+	Record
+}
+
+const callCols = `id, ts, model, routed_from, input_tokens, output_tokens,
+	cache_read_tokens, cache_write_tokens, est_cost_usd, latency_ms, status, cache_hit, saved_usd`
+
+func (s *Store) scanCalls(query string, args ...any) ([]Call, error) {
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Call
+	for rows.Next() {
+		var c Call
+		var ts int64
+		var cacheHit int
+		if err := rows.Scan(&c.ID, &ts, &c.Model, &c.RoutedFrom,
+			&c.Usage.Input, &c.Usage.Output, &c.Usage.CacheRead, &c.Usage.CacheWrite,
+			&c.CostUSD, &c.LatencyMS, &c.Status, &cacheHit, &c.SavedUSD); err != nil {
+			return nil, err
+		}
+		c.TS = time.Unix(ts, 0)
+		c.CacheHit = cacheHit == 1
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// RecentCalls pages newest-first. beforeID <= 0 starts from the latest row.
+func (s *Store) RecentCalls(limit int, beforeID int64) ([]Call, error) {
+	if beforeID > 0 {
+		return s.scanCalls(`SELECT `+callCols+` FROM calls WHERE id < ? ORDER BY id DESC LIMIT ?`, beforeID, limit)
+	}
+	return s.scanCalls(`SELECT `+callCols+` FROM calls ORDER BY id DESC LIMIT ?`, limit)
+}
+
+// CallsAfter returns rows with id > afterID, oldest first (sync batches).
+func (s *Store) CallsAfter(afterID int64, limit int) ([]Call, error) {
+	return s.scanCalls(`SELECT `+callCols+` FROM calls WHERE id > ? ORDER BY id ASC LIMIT ?`, afterID, limit)
+}
+
+func (s *Store) TotalCalls() (int64, error) {
+	var n int64
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM calls`).Scan(&n)
+	return n, err
+}

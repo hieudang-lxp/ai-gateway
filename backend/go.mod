@@ -3,6 +3,8 @@ module github.com/hieudang-lxp/ai-gateway/backend
 go 1.26.4
 
 require (
+	connectrpc.com/connect v1.20.0
+	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.57.0
 )
