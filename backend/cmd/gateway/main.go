@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -9,10 +10,18 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/rs/cors"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+
+	_ "github.com/tursodatabase/libsql-client-go/libsql"
+
+	"github.com/hieudang-lxp/ai-gateway/backend/internal/api"
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/control"
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/pricing"
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/proxy"
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/store"
+	gwsync "github.com/hieudang-lxp/ai-gateway/backend/internal/sync"
 )
 
 func main() {
@@ -20,6 +29,10 @@ func main() {
 	log.SetOutput(os.Stderr)
 	if len(os.Args) > 1 && os.Args[1] == "stats" {
 		runStats(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "api" {
+		runAPI(os.Args[2:])
 		return
 	}
 	if len(os.Args) > 1 && (os.Args[1] == "-h" || os.Args[1] == "--help") {
@@ -33,8 +46,9 @@ func printUsage() {
 	fmt.Fprint(os.Stderr, `ai-gateway — local Anthropic API proxy: usage/cost log, budgets, routing, cache
 
 Usage:
-  gateway [serve flags]    Run the proxy (default)
+  gateway [serve flags]    Run the proxy + local dashboard API (default)
   gateway stats [flags]    Show usage & cost totals
+  gateway api [flags]      Run the cloud dashboard API (Turso-backed, for Render)
 
 Point your tools at it:
   export ANTHROPIC_BASE_URL=http://localhost:8788
@@ -64,6 +78,8 @@ func runServe(args []string) {
 	dbPath := fs.String("db", dataPath("gateway.db"), "path to the SQLite store")
 	pricingPath := fs.String("pricing", configPath("pricing.json"), "path to pricing.json")
 	config := fs.String("config", configPath("gateway.yaml"), "path to gateway.yaml")
+	tursoURL := fs.String("turso-url", os.Getenv("TURSO_DATABASE_URL"), "libsql URL; empty disables sync")
+	tursoToken := fs.String("turso-token", os.Getenv("TURSO_AUTH_TOKEN"), "Turso auth token")
 	fs.Parse(args)
 
 	pr := pricing.Load(*pricingPath)
@@ -73,20 +89,100 @@ func runServe(args []string) {
 	}
 	defer st.Close()
 
-	g, err := proxy.New(*upstream, st, pr, control.NewWatcher(*config))
+	ctl := control.NewWatcher(*config)
+	g, err := proxy.New(*upstream, st, pr, ctl)
 	if err != nil {
 		log.Fatalf("build gateway: %v", err)
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/_stats", g.HandleStats)
+	mux.Handle("/rpc/", http.StripPrefix("/rpc", api.New(st, func() control.BudgetConfig {
+		return ctl.Current().Budget
+	}, "")))
 	mux.Handle("/", g)
 	srv := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 30 * time.Second}
+
+	if *tursoURL != "" {
+		remote, err := store.OpenDSN("libsql", *tursoURL+"?authToken="+*tursoToken)
+		if err != nil {
+			log.Printf("sync disabled (remote open failed): %v", err)
+		} else if err := remote.EnsureSyncSchema(); err != nil {
+			log.Printf("sync disabled (remote schema): %v", err)
+		} else {
+			syncer := &gwsync.Syncer{Local: st, Remote: remote,
+				Limits: func() control.BudgetConfig { return ctl.Current().Budget }}
+			go syncer.Run(context.Background())
+			log.Printf("sync: pushing to %s every 60s", *tursoURL)
+		}
+	} else {
+		log.Printf("sync: disabled (no -turso-url / TURSO_DATABASE_URL)")
+	}
 
 	log.Printf("ai-gateway listening on http://%s -> %s", *addr, *upstream)
 	log.Printf("set: export ANTHROPIC_BASE_URL=http://%s", *addr)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("server: %v", err)
+	}
+}
+
+func runAPI(args []string) {
+	fs := flag.NewFlagSet("api", flag.ExitOnError)
+	dbFlag := fs.String("db", "", "local sqlite path (dev/tests) — overrides Turso")
+	fs.Parse(args)
+
+	var st *store.Store
+	var err error
+	if *dbFlag != "" {
+		st, err = store.Open(*dbFlag)
+	} else {
+		url := os.Getenv("TURSO_DATABASE_URL")
+		if url == "" {
+			log.Fatal("api: set TURSO_DATABASE_URL (or -db for local dev)")
+		}
+		st, err = store.OpenDSN("libsql", url+"?authToken="+os.Getenv("TURSO_AUTH_TOKEN"))
+	}
+	if err != nil {
+		log.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	limits := func() control.BudgetConfig {
+		dw, dh, ww, wh, mw, mh, ok, err := st.ReadBudgetSnapshot()
+		if err != nil || !ok {
+			return control.BudgetConfig{}
+		}
+		return control.BudgetConfig{
+			Daily:   control.Limit{Warn: dw, Hard: dh},
+			Weekly:  control.Limit{Warn: ww, Hard: wh},
+			Monthly: control.Limit{Warn: mw, Hard: mh},
+		}
+	}
+
+	handler := api.New(st, limits, os.Getenv("DASHBOARD_TOKEN"))
+
+	origin := os.Getenv("CORS_ORIGIN") // e.g. https://<site>.netlify.app
+	allowed := []string{"http://localhost:5173"}
+	if origin != "" {
+		allowed = append(allowed, origin)
+	}
+	c := cors.New(cors.Options{
+		AllowedOrigins: allowed,
+		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders: []string{"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms"},
+	})
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8790"
+	}
+	addr := ":" + port
+	log.Printf("gateway api listening on %s", addr)
+	// h2c so plain-gRPC clients work over cleartext; browsers use Connect/JSON.
+	h := h2c.NewHandler(c.Handler(handler), &http2.Server{})
+	srv := &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 30 * time.Second}
+	if err := srv.ListenAndServe(); err != nil {
+		log.Fatalf("api server: %v", err)
 	}
 }
 

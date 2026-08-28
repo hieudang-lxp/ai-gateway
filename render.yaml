@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: ai-gateway-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: DASHBOARD_TOKEN
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
