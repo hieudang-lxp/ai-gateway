@@ -14,10 +14,10 @@ func TestRoute(t *testing.T) {
 		in, want string
 		blocked  bool
 	}{
-		{"claude-fable-5", "", true},                          // block wins
+		{"claude-fable-5", "", true},                            // block wins
 		{"claude-opus-4-8", "claude-haiku-4-5-20251001", false}, // first match wins
-		{"claude-opus-4-7", "claude-sonnet-5", false},         // glob
-		{"claude-sonnet-5", "claude-sonnet-5", false},         // passthrough
+		{"claude-opus-4-7", "claude-sonnet-5", false},           // glob
+		{"claude-sonnet-5", "claude-sonnet-5", false},           // passthrough
 	}
 	for _, c := range cases {
 		to, blocked := r.Route(c.in)
