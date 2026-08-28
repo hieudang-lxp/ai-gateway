@@ -1,0 +1,4 @@
+/lxp-scan-svc
+/lib/*.dylib
+/lib/*.so
+svc.log
