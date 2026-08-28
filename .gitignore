@@ -1,4 +1,6 @@
-/lxp-scan-svc
-/lib/*.dylib
-/lib/*.so
-svc.log
+*.db
+*.db-shm
+*.db-wal
+.env
+node_modules/
+frontend/dist/
