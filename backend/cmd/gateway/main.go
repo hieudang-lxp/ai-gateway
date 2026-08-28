@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/hieudang-lxp/ai-gateway/backend/internal/control"
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/pricing"
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/proxy"
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/store"
@@ -62,6 +63,7 @@ func runServe(args []string) {
 	upstream := fs.String("upstream", "https://api.anthropic.com", "upstream Anthropic base URL")
 	dbPath := fs.String("db", dataPath("gateway.db"), "path to the SQLite store")
 	pricingPath := fs.String("pricing", configPath("pricing.json"), "path to pricing.json")
+	config := fs.String("config", configPath("gateway.yaml"), "path to gateway.yaml")
 	fs.Parse(args)
 
 	pr := pricing.Load(*pricingPath)
@@ -71,7 +73,7 @@ func runServe(args []string) {
 	}
 	defer st.Close()
 
-	g, err := proxy.New(*upstream, st, pr)
+	g, err := proxy.New(*upstream, st, pr, control.NewWatcher(*config))
 	if err != nil {
 		log.Fatalf("build gateway: %v", err)
 	}

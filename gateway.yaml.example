@@ -1,0 +1,13 @@
+budget:
+  daily_usd:   {warn: 10, hard: 20}
+  weekly_usd:  {warn: 50, hard: 100}
+  monthly_usd: {warn: 150, hard: 300}
+routing:
+  rules:
+    - match: "claude-opus-*"
+      to: "claude-sonnet-5"
+  block:
+    - "claude-fable-*"
+cache:
+  enabled: true
+  ttl: 1h

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hieudang-lxp/ai-gateway/backend/internal/control"
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/pricing"
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/proxy"
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/store"
@@ -57,7 +58,8 @@ func TestProxyJSONResponseLogged(t *testing.T) {
 	defer upstream.Close()
 
 	st := newTestStore(t)
-	g, err := proxy.New(upstream.URL, st, testPricing(t))
+	ctl := control.NewWatcher(filepath.Join(t.TempDir(), "absent.yaml"))
+	g, err := proxy.New(upstream.URL, st, testPricing(t), ctl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +101,8 @@ func TestProxySSEResponseLogged(t *testing.T) {
 	defer upstream.Close()
 
 	st := newTestStore(t)
-	g, err := proxy.New(upstream.URL, st, testPricing(t))
+	ctl := control.NewWatcher(filepath.Join(t.TempDir(), "absent.yaml"))
+	g, err := proxy.New(upstream.URL, st, testPricing(t), ctl)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -20,12 +20,15 @@ type Usage struct {
 
 // Record is one persisted call.
 type Record struct {
-	TS        time.Time
-	Model     string
-	Usage     Usage
-	CostUSD   float64
-	LatencyMS int64
-	Status    int
+	TS         time.Time
+	Model      string
+	Usage      Usage
+	CostUSD    float64
+	LatencyMS  int64
+	Status     int
+	RoutedFrom string
+	CacheHit   bool
+	SavedUSD   float64
 }
 
 // Store wraps the SQLite connection holding the calls table.
@@ -49,6 +52,14 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	// Migrate pre-existing DBs; "duplicate column" errors are expected and ignored.
+	for _, ddl := range []string{
+		`ALTER TABLE calls ADD COLUMN routed_from TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE calls ADD COLUMN cache_hit INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE calls ADD COLUMN saved_usd REAL NOT NULL DEFAULT 0`,
+	} {
+		_, _ = db.Exec(ddl)
+	}
 	return &Store{db: db}, nil
 }
 
@@ -63,7 +74,10 @@ CREATE TABLE IF NOT EXISTS calls (
 	cache_write_tokens INTEGER NOT NULL,
 	est_cost_usd       REAL    NOT NULL,
 	latency_ms         INTEGER NOT NULL,
-	status             INTEGER NOT NULL
+	status             INTEGER NOT NULL,
+	routed_from        TEXT    NOT NULL DEFAULT '',
+	cache_hit          INTEGER NOT NULL DEFAULT 0,
+	saved_usd          REAL    NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_calls_ts ON calls(ts);
 CREATE TABLE IF NOT EXISTS cache (
@@ -80,13 +94,21 @@ CREATE TABLE IF NOT EXISTS cache (
 func (s *Store) Insert(r Record) error {
 	_, err := s.db.Exec(
 		`INSERT INTO calls
-		 (ts, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, est_cost_usd, latency_ms, status)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (ts, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, est_cost_usd, latency_ms, status, routed_from, cache_hit, saved_usd)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.TS.Unix(), r.Model,
 		r.Usage.Input, r.Usage.Output, r.Usage.CacheRead, r.Usage.CacheWrite,
 		r.CostUSD, r.LatencyMS, r.Status,
+		r.RoutedFrom, boolToInt(r.CacheHit), r.SavedUSD,
 	)
 	return err
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -182,4 +204,12 @@ func (s *Store) CacheGet(key string, maxAge time.Duration) (*CachedResponse, boo
 		return nil, false, nil
 	}
 	return &c, true, nil
+}
+
+// CacheSavings returns how many cache hits were served and the total USD saved.
+func (s *Store) CacheSavings() (hits int64, saved float64, err error) {
+	err = s.db.QueryRow(
+		`SELECT COUNT(*), COALESCE(SUM(saved_usd), 0) FROM calls WHERE cache_hit = 1`,
+	).Scan(&hits, &saved)
+	return
 }
