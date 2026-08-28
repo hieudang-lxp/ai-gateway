@@ -148,13 +148,17 @@ type CachedResponse struct {
 }
 
 func (s *Store) CachePut(key string, c CachedResponse) error {
+	body := c.Body
+	if body == nil {
+		body = []byte{}
+	}
 	_, err := s.db.Exec(
 		`INSERT INTO cache (key, created, status, content_type, body, cost_usd, model)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(key) DO UPDATE SET created=excluded.created, status=excluded.status,
 		   content_type=excluded.content_type, body=excluded.body,
 		   cost_usd=excluded.cost_usd, model=excluded.model`,
-		key, time.Now().Unix(), c.Status, c.ContentType, c.Body, c.CostUSD, c.Model,
+		key, time.Now().Unix(), c.Status, c.ContentType, body, c.CostUSD, c.Model,
 	)
 	return err
 }

@@ -37,6 +37,17 @@ func TestCacheMissAndExpiry(t *testing.T) {
 	}
 }
 
+func TestCachePutNilBody(t *testing.T) {
+	st := open(t)
+	if err := st.CachePut("k", CachedResponse{Status: 200, Body: nil}); err != nil {
+		t.Fatalf("nil body must cache: %v", err)
+	}
+	got, ok, err := st.CacheGet("k", time.Hour)
+	if err != nil || !ok || len(got.Body) != 0 {
+		t.Fatalf("roundtrip: ok=%v err=%v body=%v", ok, err, got)
+	}
+}
+
 func TestCachePutOverwrites(t *testing.T) {
 	st := open(t)
 	_ = st.CachePut("k", CachedResponse{Status: 200, Body: []byte("v1")})
