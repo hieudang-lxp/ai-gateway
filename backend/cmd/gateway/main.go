@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rs/cors"
@@ -97,9 +98,18 @@ func runServe(args []string) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/_stats", g.HandleStats)
-	mux.Handle("/rpc/", http.StripPrefix("/rpc", api.New(st, func() control.BudgetConfig {
+	// CORS so the dashboard dev server (any localhost port) can call the local API.
+	rpcCORS := cors.New(cors.Options{
+		AllowOriginFunc: func(origin string) bool {
+			return strings.HasPrefix(origin, "http://localhost:") ||
+				strings.HasPrefix(origin, "http://127.0.0.1:")
+		},
+		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders: []string{"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms"},
+	})
+	mux.Handle("/rpc/", http.StripPrefix("/rpc", rpcCORS.Handler(api.New(st, func() control.BudgetConfig {
 		return ctl.Current().Budget
-	}, "")))
+	}, ""))))
 	mux.Handle("/", g)
 	srv := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 30 * time.Second}
 
