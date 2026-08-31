@@ -582,20 +582,22 @@ func (x *RecentCallsRequest) GetBeforeId() int64 {
 }
 
 type Call struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	TsUnix        int64                  `protobuf:"varint,2,opt,name=ts_unix,json=tsUnix,proto3" json:"ts_unix,omitempty"`
-	Model         string                 `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
-	RoutedFrom    string                 `protobuf:"bytes,4,opt,name=routed_from,json=routedFrom,proto3" json:"routed_from,omitempty"`
-	InputTokens   int64                  `protobuf:"varint,5,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`
-	OutputTokens  int64                  `protobuf:"varint,6,opt,name=output_tokens,json=outputTokens,proto3" json:"output_tokens,omitempty"`
-	CostUsd       float64                `protobuf:"fixed64,7,opt,name=cost_usd,json=costUsd,proto3" json:"cost_usd,omitempty"`
-	LatencyMs     int64                  `protobuf:"varint,8,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"`
-	Status        int32                  `protobuf:"varint,9,opt,name=status,proto3" json:"status,omitempty"`
-	CacheHit      bool                   `protobuf:"varint,10,opt,name=cache_hit,json=cacheHit,proto3" json:"cache_hit,omitempty"`
-	SavedUsd      float64                `protobuf:"fixed64,11,opt,name=saved_usd,json=savedUsd,proto3" json:"saved_usd,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Id               int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	TsUnix           int64                  `protobuf:"varint,2,opt,name=ts_unix,json=tsUnix,proto3" json:"ts_unix,omitempty"`
+	Model            string                 `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
+	RoutedFrom       string                 `protobuf:"bytes,4,opt,name=routed_from,json=routedFrom,proto3" json:"routed_from,omitempty"`
+	InputTokens      int64                  `protobuf:"varint,5,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`
+	OutputTokens     int64                  `protobuf:"varint,6,opt,name=output_tokens,json=outputTokens,proto3" json:"output_tokens,omitempty"`
+	CostUsd          float64                `protobuf:"fixed64,7,opt,name=cost_usd,json=costUsd,proto3" json:"cost_usd,omitempty"`
+	LatencyMs        int64                  `protobuf:"varint,8,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"`
+	Status           int32                  `protobuf:"varint,9,opt,name=status,proto3" json:"status,omitempty"`
+	CacheHit         bool                   `protobuf:"varint,10,opt,name=cache_hit,json=cacheHit,proto3" json:"cache_hit,omitempty"`
+	SavedUsd         float64                `protobuf:"fixed64,11,opt,name=saved_usd,json=savedUsd,proto3" json:"saved_usd,omitempty"`
+	CacheReadTokens  int64                  `protobuf:"varint,12,opt,name=cache_read_tokens,json=cacheReadTokens,proto3" json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int64                  `protobuf:"varint,13,opt,name=cache_write_tokens,json=cacheWriteTokens,proto3" json:"cache_write_tokens,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Call) Reset() {
@@ -705,6 +707,20 @@ func (x *Call) GetSavedUsd() float64 {
 	return 0
 }
 
+func (x *Call) GetCacheReadTokens() int64 {
+	if x != nil {
+		return x.CacheReadTokens
+	}
+	return 0
+}
+
+func (x *Call) GetCacheWriteTokens() int64 {
+	if x != nil {
+		return x.CacheWriteTokens
+	}
+	return 0
+}
+
 type RecentCallsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Calls         []*Call                `protobuf:"bytes,1,rep,name=calls,proto3" json:"calls,omitempty"`
@@ -792,7 +808,7 @@ const file_gateway_v1_stats_proto_rawDesc = "" +
 	"\x04rows\x18\x01 \x03(\v2\x14.gateway.v1.ModelRowR\x04rows\"G\n" +
 	"\x12RecentCallsRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x1b\n" +
-	"\tbefore_id\x18\x02 \x01(\x03R\bbeforeId\"\xba\x02\n" +
+	"\tbefore_id\x18\x02 \x01(\x03R\bbeforeId\"\x94\x03\n" +
 	"\x04Call\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x17\n" +
 	"\ats_unix\x18\x02 \x01(\x03R\x06tsUnix\x12\x14\n" +
@@ -807,7 +823,9 @@ const file_gateway_v1_stats_proto_rawDesc = "" +
 	"\x06status\x18\t \x01(\x05R\x06status\x12\x1b\n" +
 	"\tcache_hit\x18\n" +
 	" \x01(\bR\bcacheHit\x12\x1b\n" +
-	"\tsaved_usd\x18\v \x01(\x01R\bsavedUsd\"=\n" +
+	"\tsaved_usd\x18\v \x01(\x01R\bsavedUsd\x12*\n" +
+	"\x11cache_read_tokens\x18\f \x01(\x03R\x0fcacheReadTokens\x12,\n" +
+	"\x12cache_write_tokens\x18\r \x01(\x03R\x10cacheWriteTokens\"=\n" +
 	"\x13RecentCallsResponse\x12&\n" +
 	"\x05calls\x18\x01 \x03(\v2\x10.gateway.v1.CallR\x05calls2\xce\x02\n" +
 	"\fStatsService\x12E\n" +

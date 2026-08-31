@@ -150,6 +150,7 @@ func (s *server) RecentCalls(ctx context.Context, req *connect.Request[gatewayv1
 		resp.Calls = append(resp.Calls, &gatewayv1.Call{
 			Id: c.ID, TsUnix: c.TS.Unix(), Model: c.Model, RoutedFrom: c.RoutedFrom,
 			InputTokens: c.Usage.Input, OutputTokens: c.Usage.Output,
+			CacheReadTokens: c.Usage.CacheRead, CacheWriteTokens: c.Usage.CacheWrite,
 			CostUsd: c.CostUSD, LatencyMs: c.LatencyMS, Status: int32(c.Status),
 			CacheHit: c.CacheHit, SavedUsd: c.SavedUSD,
 		})

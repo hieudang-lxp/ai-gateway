@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { StatsService } from "../gen/gateway/v1/stats_pb";
+import { compactTokens } from "../lib/format";
 import { useCurrency } from "./CurrencyContext";
 
 const pagerBtn =
@@ -42,8 +43,18 @@ export function RecentCalls() {
             <tr className="border-b border-sky-100 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
               <th className="py-2">Time</th>
               <th>Model</th>
-              <th className="text-right">In</th>
-              <th className="text-right">Out</th>
+              <th className="text-right" title="Input tokens (không tính cache)">
+                Input
+              </th>
+              <th className="text-right" title="Output tokens">
+                Output
+              </th>
+              <th className="text-right" title="Prompt-cache read tokens">
+                Cache rd
+              </th>
+              <th className="text-right" title="Prompt-cache write tokens">
+                Cache wr
+              </th>
               <th className="text-right">Cost</th>
               <th className="text-right">ms</th>
               <th className="text-right">Status</th>
@@ -76,6 +87,12 @@ export function RecentCalls() {
                 </td>
                 <td className="text-right">
                   {Number(c.outputTokens).toLocaleString()}
+                </td>
+                <td className="text-right text-slate-500">
+                  {compactTokens(c.cacheReadTokens)}
+                </td>
+                <td className="text-right text-slate-500">
+                  {compactTokens(c.cacheWriteTokens)}
                 </td>
                 <td className="text-right font-semibold text-sky-950">
                   {fmt(c.costUsd)}
