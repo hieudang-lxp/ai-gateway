@@ -30,7 +30,7 @@ export function SpendChart() {
               name === "cost" ? [fmt(Number(v)), "cost"] : [v, name]
             }
           />
-          <Bar dataKey="cost" fill="#111827" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="cost" fill="#111827" radius={[3, 3, 0, 0]} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
     </section>
