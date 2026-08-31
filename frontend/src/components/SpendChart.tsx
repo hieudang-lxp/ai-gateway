@@ -6,9 +6,13 @@ import {
   XAxis,
   YAxis,
   Tooltip,
+  CartesianGrid,
 } from "recharts";
 import { StatsService } from "../gen/gateway/v1/stats_pb";
 import { useCurrency } from "./CurrencyContext";
+
+// single-series mark: #0369a1 (validated vs white surface)
+const OCEAN = "#0369a1";
 
 export function SpendChart() {
   const { data } = useQuery(StatsService.method.spendSeries, { days: 30 });
@@ -19,18 +23,48 @@ export function SpendChart() {
     calls: Number(p.calls),
   }));
   return (
-    <section className="rounded-lg border border-gray-200 p-4">
-      <h2 className="mb-3 font-semibold">Spend — last 30 days</h2>
-      <ResponsiveContainer width="100%" height={220}>
-        <BarChart data={points}>
-          <XAxis dataKey="date" fontSize={11} interval={4} />
-          <YAxis fontSize={11} tickFormatter={(v: number) => fmt(v)} width={90} />
+    <section className="rounded-2xl border border-sky-100 bg-white p-6 shadow-sm">
+      <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-sky-900">
+        Spend — last 30 days
+      </h2>
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={points} barCategoryGap="25%">
+          <CartesianGrid vertical={false} stroke="#e0f2fe" />
+          <XAxis
+            dataKey="date"
+            fontSize={11}
+            interval={4}
+            tickLine={false}
+            axisLine={{ stroke: "#bae6fd" }}
+            tick={{ fill: "#64748b" }}
+          />
+          <YAxis
+            fontSize={11}
+            tickFormatter={(v: number) => fmt(v)}
+            width={90}
+            tickLine={false}
+            axisLine={false}
+            tick={{ fill: "#64748b" }}
+          />
           <Tooltip
+            cursor={{ fill: "#f0f9ff" }}
+            contentStyle={{
+              borderRadius: 12,
+              border: "1px solid #bae6fd",
+              boxShadow: "0 4px 12px rgba(12,74,110,0.08)",
+              fontSize: 12,
+            }}
+            labelStyle={{ color: "#0c4a6e", fontWeight: 600 }}
             formatter={(v, name) =>
               name === "cost" ? [fmt(Number(v)), "cost"] : [v, name]
             }
           />
-          <Bar dataKey="cost" fill="#111827" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+          <Bar
+            dataKey="cost"
+            fill={OCEAN}
+            radius={[4, 4, 0, 0]}
+            isAnimationActive={false}
+          />
         </BarChart>
       </ResponsiveContainer>
     </section>
