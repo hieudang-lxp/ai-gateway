@@ -23,6 +23,7 @@ import (
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/proxy"
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/store"
 	gwsync "github.com/hieudang-lxp/ai-gateway/backend/internal/sync"
+	"github.com/hieudang-lxp/ai-gateway/backend/internal/usage"
 )
 
 func main() {
@@ -74,6 +75,14 @@ func configPath(file string) string {
 
 func runServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	home, _ := os.UserHomeDir()
+	collect := fs.Bool("collect", true, "automatically collect Codex, Claude Code and Cursor usage")
+	codexHome := fs.String("codex-home", filepath.Join(home, ".codex"), "Codex data root (sessions and archived_sessions)")
+	claudeProjects := fs.String("claude-projects", filepath.Join(home, ".claude", "projects"), "Claude Code transcript root")
+	cursorState := fs.String("cursor-state", filepath.Join(home, "Library", "Application Support", "Cursor", "User", "globalStorage", "state.vscdb"), "read-only Cursor session database")
+	cursorInterval := fs.Duration("cursor-interval", 5*time.Minute, "Cursor usage polling interval")
+	cursorHistory := fs.Int("cursor-history-days", 365, "Cursor usage history window refreshed each poll")
+	dashboard := fs.String("dashboard", "", "built frontend directory served at /dashboard/")
 	addr := fs.String("addr", "localhost:8788", "listen address")
 	upstream := fs.String("upstream", "https://api.anthropic.com", "upstream Anthropic base URL")
 	dbPath := fs.String("db", dataPath("gateway.db"), "path to the SQLite store")
@@ -110,6 +119,20 @@ func runServe(args []string) {
 	mux.Handle("/rpc/", http.StripPrefix("/rpc", rpcCORS.Handler(api.New(st, func() control.BudgetConfig {
 		return ctl.Current().Budget
 	}, ""))))
+	if *collect {
+		collector := usage.New(st, pr, usage.Config{PriceCache: filepath.Join(filepath.Dir(*dbPath), "model-prices.json"), CodexHome: *codexHome, ClaudeProjects: *claudeProjects, CursorState: *cursorState, CursorInterval: *cursorInterval, CursorHistoryDays: *cursorHistory})
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		collector.Run(ctx)
+		mux.Handle("/_usage", rpcCORS.Handler(http.HandlerFunc(collector.HandleSummary)))
+	}
+	if *dashboard != "" {
+		mux.Handle("/dashboard/", http.StripPrefix("/dashboard/", http.FileServer(http.Dir(*dashboard))))
+	}
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, `{"status":"ok"}`)
+	})
 	mux.Handle("/", g)
 	srv := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 30 * time.Second}
 

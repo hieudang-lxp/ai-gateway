@@ -8,7 +8,11 @@ const auth: Interceptor = (next) => (req) => {
   return next(req);
 };
 
+export const apiBaseURL = import.meta.env.VITE_API_URL ?? (
+  window.location.pathname.startsWith("/dashboard") ? `${window.location.origin}/rpc` : "http://localhost:8788/rpc"
+);
+
 export const transport = createConnectTransport({
-  baseUrl: import.meta.env.VITE_API_URL ?? "http://localhost:8788/rpc",
+  baseUrl: apiBaseURL,
   interceptors: [auth],
 });

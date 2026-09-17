@@ -1,0 +1,25 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    image: ai-gateway-local:latest
+    container_name: ai-gateway
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8788}:8788"
+    volumes:
+      - ${GATEWAY_DATA_DIR:-${HOME}/.local/share/ai-gateway}:/data
+      - ${GATEWAY_CONFIG_DIR:-${HOME}/.config/ai-gateway}:/config:ro
+      - ${CODEX_SESSIONS_DIR:-${HOME}/.codex/sessions}:/sources/codex/sessions:ro
+      - ${CODEX_ARCHIVED_DIR:-${HOME}/.codex/archived_sessions}:/sources/codex/archived_sessions:ro
+      - ${CLAUDE_PROJECTS_DIR:-${HOME}/.claude/projects}:/sources/claude:ro
+      # Mount the directory so SQLite WAL rotations and token refreshes are visible.
+      # The collector queries only accessToken, cachedEmail and cachedTeam.
+      - ${CURSOR_STATE_DIR:-${HOME}/Library/Application Support/Cursor/User/globalStorage}:/sources/cursor:ro
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"

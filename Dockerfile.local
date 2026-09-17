@@ -1,0 +1,23 @@
+FROM node:24-alpine AS frontend
+WORKDIR /app
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+FROM golang:1.26-alpine AS backend
+WORKDIR /src
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend/ ./
+RUN CGO_ENABLED=0 go build -trimpath -o /gateway ./cmd/gateway
+
+FROM alpine:3.23
+RUN apk add --no-cache ca-certificates tzdata
+COPY --from=backend /gateway /usr/local/bin/gateway
+COPY --from=frontend /app/dist /app/dashboard
+ENV TZ=Asia/Ho_Chi_Minh
+EXPOSE 8788
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD wget -q -O /dev/null http://127.0.0.1:8788/healthz || exit 1
+ENTRYPOINT ["gateway"]
+CMD ["-addr", "0.0.0.0:8788", "-db", "/data/gateway.db", "-pricing", "/config/pricing.json", "-config", "/config/gateway.yaml", "-dashboard", "/app/dashboard", "-codex-home", "/sources/codex", "-claude-projects", "/sources/claude", "-cursor-state", "/sources/cursor/state.vscdb"]
