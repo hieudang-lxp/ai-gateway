@@ -7,7 +7,7 @@ model routing and response caching — plus a Connect RPC stats API and a React
 dashboard. The separate cloud deployment supports Netlify, Render, and Turso
 for proxy statistics; the three-tool collector runs locally.
 
-- `backend/` — Go: `gateway serve` (local proxy) / `gateway api` (cloud stats API) / `gateway stats` (CLI)
+- `backend/` — Go binaries: `gateway` (server) and `aictl` (usage/diagnostics CLI)
 - `proto/` — buf-managed Connect RPC schema
 - `frontend/` — React + Vite dashboard
 
@@ -193,6 +193,65 @@ file while WAL writes are active). Protect that directory as account usage data.
 The only authenticated collector network destination is `api2.cursor.sh`;
 public price downloads go to `raw.githubusercontent.com` without credentials.
 
+## Terminal companion: `aictl`
+
+The same repository builds two binaries with different responsibilities:
+
+```text
+backend/cmd/
+├── gateway/    # long-running proxy, collectors, dashboard and cloud API
+└── aictl/      # read-only commands that call the local gateway API
+```
+
+The local Docker image includes both. No host Go installation is needed:
+
+```sh
+docker compose exec -T gateway aictl status
+docker compose exec -T gateway aictl usage --month
+docker compose exec -T gateway aictl usage --days 30 --json
+docker compose exec -T gateway aictl doctor
+docker compose exec -T gateway aictl export --month --format csv > usage.csv
+```
+
+To install a native CLI (Go matching `backend/go.mod` required):
+
+```sh
+cd backend
+go install ./cmd/aictl
+cd ..
+"$(go env GOPATH)/bin/aictl" status
+```
+
+Add Go's binary directory to PATH to use `aictl` directly. If `GOBIN` is set,
+Go installs there instead. For a different host port, pass
+`aictl --url http://localhost:8789 usage`. Within the gateway container, keep the
+default URL because the service still listens on port 8788 internally.
+
+| Command | Result |
+| --- | --- |
+| `aictl status` | HTTP health, collector states, last sync and price freshness |
+| `aictl usage --month` | Per-source/model token counts and usage value, with unpriced/estimated/fallback counts |
+| `aictl doctor` | Checks reported collector state, overdue syncs, empty local log sources, and stale prices; suggests fixes |
+| `aictl export --month --format csv` | One aggregate row per source/model, including token categories, period and price metadata |
+
+`usage` and `export` default to the current month in the gateway's timezone.
+Use `--days N` for a rolling range or `--days 0` for all history; it cannot be
+combined with `--month`. Every command accepts `--json`, `--url`, and
+`--timeout 15s`. Export also supports `--format json`. Data goes to stdout,
+errors to stderr; CSV goes directly to stdout so shell redirection chooses the
+output file. CSV escapes spreadsheet formula prefixes in model/source names.
+
+The CLI uses the same `/_usage` calculations as the dashboard. It does not read
+Cursor credentials, change configuration, trigger collection, or calculate prices
+independently. `doctor` diagnoses server-reported results; it does not directly
+inspect host paths or Docker mounts. It exits 1 for warnings/errors, useful for
+scripts; successful commands (including empty usage) exit 0. `status` displays
+degraded collectors without failing when both APIs are reachable; use `doctor`
+for a strict health check. Failed HTTP requests exit 1.
+
+The existing `gateway stats` remains available for backward-compatible,
+database-based proxy-only statistics. Use `aictl usage` for all three tools.
+
 ## Development
 
 Use Go matching `backend/go.mod` and Node 24 for local development. Docker builds
@@ -201,6 +260,7 @@ both components, so these host runtimes are optional for normal use.
 ```sh
 cd backend
 go test ./...
+go build ./cmd/gateway ./cmd/aictl
 cd ../frontend
 npm ci
 npm test
@@ -215,6 +275,7 @@ For frontend iteration, leave Docker running and run `npm run dev` in
 the same origin. Relevant implementation entry points:
 
 - `backend/internal/usage/`: provider parsers, `collector.go` for polling and `summary.go` for the HTTP summary API.
+- `backend/internal/aictl/`: CLI commands, HTTP client, reports and diagnostics; `cmd/aictl/main.go` handles process exit only.
 - `backend/internal/store/usage.go`: idempotent imports and consistent summaries.
 - `backend/internal/pricing/catalog.go`: hourly catalog refresh, disk cache and Codex estimates.
 - `frontend/src/features/usage/`: unified usage, period controls and source status.

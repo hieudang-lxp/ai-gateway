@@ -11,10 +11,12 @@ COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
 RUN CGO_ENABLED=0 go build -trimpath -o /gateway ./cmd/gateway
+RUN CGO_ENABLED=0 go build -trimpath -o /aictl ./cmd/aictl
 
 FROM alpine:3.23
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=backend /gateway /usr/local/bin/gateway
+COPY --from=backend /aictl /usr/local/bin/aictl
 COPY --from=frontend /app/dist /app/dashboard
 ENV TZ=Asia/Ho_Chi_Minh
 EXPOSE 8788
