@@ -1,4 +1,4 @@
-import { useCurrency } from "./CurrencyContext";
+import { useCurrency } from "../features/currency/useCurrency";
 
 export function Header() {
   const { currency, toggle, rate, fetchedAt } = useCurrency();

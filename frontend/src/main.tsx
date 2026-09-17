@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { transport } from "./lib/transport";
-import { TokenGate } from "./components/TokenGate";
+import { TokenGate } from "./features/auth/TokenGate";
 import App from "./App";
 import "./index.css";
 

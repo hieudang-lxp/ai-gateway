@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 import { ConnectError, Code } from "@connectrpc/connect";
-import { clearToken, setToken } from "../lib/token";
+import { clearToken, setToken } from "./token";
 
 function isUnauthenticated(err: unknown): boolean {
   return err instanceof ConnectError && err.code === Code.Unauthenticated;

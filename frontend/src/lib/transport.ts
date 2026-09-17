@@ -1,6 +1,6 @@
 import { createConnectTransport } from "@connectrpc/connect-web";
 import type { Interceptor } from "@connectrpc/connect";
-import { getToken } from "./token";
+import { getToken } from "../features/auth/token";
 
 const auth: Interceptor = (next) => (req) => {
   const token = getToken();

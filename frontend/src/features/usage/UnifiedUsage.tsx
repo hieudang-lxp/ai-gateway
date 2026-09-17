@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { apiBaseURL } from "../lib/transport";
-import { summarizeUsage, type UsageCounts } from "../lib/usage";
-import { useCurrency } from "./CurrencyContext";
+import { apiBaseURL } from "../../lib/transport";
+import { summarizeUsage, type UsageCounts } from "./usage";
+import { useCurrency } from "../currency/useCurrency";
 
 type Row = UsageCounts & { source: string; model: string; estimated_cost_calls: number; fallback_cost_calls: number; first_ts: number; last_ts: number };
 type Status = { state: string; last_success: string | null; error?: string; poll_seconds: number };

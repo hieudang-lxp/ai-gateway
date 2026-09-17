@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { StatsService } from "../gen/gateway/v1/stats_pb";
-import { compactTokens } from "../lib/format";
-import { useCurrency } from "./CurrencyContext";
+import { StatsService } from "../../gen/gateway/v1/stats_pb";
+import { compactTokens } from "../../lib/format";
+import { useCurrency } from "../currency/useCurrency";
 
 const pagerBtn =
   "rounded-lg border border-sky-200 bg-white px-3 py-1 text-xs font-medium text-sky-800 shadow-sm transition-colors hover:bg-sky-50";

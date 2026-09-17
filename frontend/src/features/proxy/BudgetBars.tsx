@@ -1,8 +1,8 @@
 import { useQuery } from "@connectrpc/connect-query";
-import { StatsService } from "../gen/gateway/v1/stats_pb";
-import type { BudgetWindow } from "../gen/gateway/v1/stats_pb";
-import { barState } from "../lib/budget";
-import { useCurrency } from "./CurrencyContext";
+import { StatsService } from "../../gen/gateway/v1/stats_pb";
+import type { BudgetWindow } from "../../gen/gateway/v1/stats_pb";
+import { barState } from "./budget";
+import { useCurrency } from "../currency/useCurrency";
 
 // validated status colors: ok #0369a1 · warn #d97706 · over #dc2626
 const FILL = {

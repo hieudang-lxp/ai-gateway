@@ -1,11 +1,11 @@
-import { CurrencyProvider } from "./components/CurrencyContext";
+import { CurrencyProvider } from "./features/currency/CurrencyProvider";
 import { Header } from "./components/Header";
-import { BudgetBars } from "./components/BudgetBars";
-import { CacheStats } from "./components/CacheStats";
-import { SpendChart } from "./components/SpendChart";
-import { ModelTable } from "./components/ModelTable";
-import { RecentCalls } from "./components/RecentCalls";
-import { UnifiedUsage } from "./components/UnifiedUsage";
+import { BudgetBars } from "./features/proxy/BudgetBars";
+import { CacheStats } from "./features/proxy/CacheStats";
+import { SpendChart } from "./features/proxy/SpendChart";
+import { ModelTable } from "./features/proxy/ModelTable";
+import { RecentCalls } from "./features/proxy/RecentCalls";
+import { UnifiedUsage } from "./features/usage/UnifiedUsage";
 
 export default function App() {
   return (

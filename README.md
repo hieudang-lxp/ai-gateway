@@ -11,8 +11,8 @@ for proxy statistics; the three-tool collector runs locally.
 - `proto/` — buf-managed Connect RPC schema
 - `frontend/` — React + Vite dashboard
 
-Design: `docs/superpowers/specs/2026-08-28-ai-gateway-design.md`.
-Previous life of this repo (gRPC scan service): tag `scan-svc-final`.
+The setup and maintenance guide below describes the current implementation.
+Historical design plans and the former scan service remain available in Git history.
 
 ## Local Docker service: all three tools
 
@@ -214,10 +214,15 @@ For frontend iteration, leave Docker running and run `npm run dev` in
 `frontend/`; its API defaults to localhost:8788. The production dashboard uses
 the same origin. Relevant implementation entry points:
 
-- `backend/internal/usage/`: parsers, automatic polling, Cursor API and `/_usage`.
+- `backend/internal/usage/`: provider parsers, `collector.go` for polling and `summary.go` for the HTTP summary API.
 - `backend/internal/store/usage.go`: idempotent imports and consistent summaries.
 - `backend/internal/pricing/catalog.go`: hourly catalog refresh, disk cache and Codex estimates.
-- `frontend/src/components/UnifiedUsage.tsx`: period controls, source status and model breakdown.
+- `frontend/src/features/usage/`: unified usage, period controls and source status.
+- `frontend/src/features/proxy/`: proxy budgets, cache, charts and request diagnostics.
+- `frontend/src/features/auth/`: dashboard token handling and authentication boundary.
+- `frontend/src/features/currency/`: currency context, exchange rates and formatting.
+- `frontend/src/components/`: shared layout; `lib/`: shared transport/format helpers.
+- `backend/gen/` and `frontend/src/gen/`: generated clients; edit `proto/` and run `buf generate` to regenerate, rather than editing generated files.
 - `compose.yaml` / `Dockerfile.local`: local deployment; `Dockerfile`: cloud API.
 
 The Anthropic proxy is optional for collection. To use its routing, cache and

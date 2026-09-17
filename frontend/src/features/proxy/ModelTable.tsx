@@ -1,6 +1,6 @@
 import { useQuery } from "@connectrpc/connect-query";
-import { StatsService } from "../gen/gateway/v1/stats_pb";
-import { useCurrency } from "./CurrencyContext";
+import { StatsService } from "../../gen/gateway/v1/stats_pb";
+import { useCurrency } from "../currency/useCurrency";
 
 const n = (v: bigint) => Number(v).toLocaleString();
 

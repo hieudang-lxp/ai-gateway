@@ -3,7 +3,7 @@ import {
   parseRateResponse,
   loadCachedRate,
   saveCachedRate,
-} from "../lib/currency";
+} from "./currency";
 
 const URL = "https://open.er-api.com/v6/latest/USD";
 const HOUR = 60 * 60 * 1000;
