@@ -15,9 +15,9 @@ function Tile({
   title?: string;
 }) {
   return (
-    <div className="rounded-xl bg-sky-50/60 p-4" title={title}>
+    <div className="min-w-0 rounded-xl bg-sky-50/60 p-4" title={title}>
       <div className="text-xs font-medium text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-sky-950">
+      <div className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-sky-950 [overflow-wrap:anywhere]">
         {value}
       </div>
       {sub && <div className="mt-0.5 text-[13px] text-slate-400">{sub}</div>}
@@ -49,7 +49,7 @@ export function CacheStats() {
   const rate = total > 0 ? ((hits / total) * 100).toFixed(1) + "%" : "—";
 
   return (
-    <section className="grid h-full grid-cols-2 gap-4 rounded-2xl border border-sky-100 bg-white p-6 shadow-sm sm:grid-cols-3">
+    <section className="grid h-full grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-4 rounded-2xl border border-sky-100 bg-white p-6 shadow-sm">
       <Tile label="Total calls" value={total.toLocaleString()} sub="all time" />
       <Tile
         label="Input tokens"
