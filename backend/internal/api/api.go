@@ -153,6 +153,7 @@ func (s *server) RecentCalls(ctx context.Context, req *connect.Request[gatewayv1
 			CacheReadTokens: c.Usage.CacheRead, CacheWriteTokens: c.Usage.CacheWrite,
 			CostUsd: c.CostUSD, LatencyMs: c.LatencyMS, Status: int32(c.Status),
 			CacheHit: c.CacheHit, SavedUsd: c.SavedUSD,
+			RequestId: c.RequestID, RequestModel: c.RequestModel, RequestPath: c.RequestPath, ModelSource: c.ModelSource, UpstreamRequestId: c.UpstreamRequestID,
 		})
 	}
 	return connect.NewResponse(resp), nil

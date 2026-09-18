@@ -111,6 +111,13 @@ func TestRoutingRewritesModel(t *testing.T) {
 	if rows[0].Model != "claude-sonnet-5" {
 		t.Fatalf("logged model = %s (cost must follow the actual model)", rows[0].Model)
 	}
+	calls, err := st.RecentCalls(1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls[0].RequestModel != "claude-opus-4-8" || calls[0].ModelSource != "response" || calls[0].RoutedFrom != "claude-opus-4-8" {
+		t.Fatalf("routing lost original model attribution: %+v", calls[0])
+	}
 }
 
 func TestBlockedModelRejected(t *testing.T) {
@@ -157,6 +164,13 @@ func TestCacheHitServesStoredResponse(t *testing.T) {
 			t.Fatal(err)
 		}
 		if hitsN == 1 && saved > 0 {
+			rows, err := st.RecentCalls(2, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(rows) != 2 || rows[0].ModelSource != "cache" || rows[0].RequestModel != "claude-sonnet-5" || rows[0].RequestID == "" || rows[0].RequestID == rows[1].RequestID {
+				t.Fatalf("cache hit lost distinct request trace: %+v", rows)
+			}
 			break
 		}
 		if time.Now().After(deadline) {

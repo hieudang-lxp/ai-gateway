@@ -7,8 +7,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/control"
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/store"
 )
@@ -18,7 +20,8 @@ import (
 // through to plain proxying (fail-open).
 func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	cfg := g.ctl.Current()
-	info := &reqInfo{start: time.Now()}
+	info := &reqInfo{start: time.Now(), requestID: uuid.NewString(), requestPath: r.URL.Path}
+	w.Header().Set("X-Gateway-Request-Id", info.requestID)
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, 64<<20))
 	r.Body.Close()
@@ -27,6 +30,20 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error", "gateway: unreadable request body")
 		return
 	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		log.Printf("request rejected request_id=%s path=%s reason=invalid_json", info.requestID, info.requestPath)
+		writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error", "gateway: request body must be a JSON object")
+		return
+	}
+	var model string
+	if err := json.Unmarshal(fields["model"], &model); err != nil || strings.TrimSpace(model) == "" {
+		log.Printf("request rejected request_id=%s path=%s reason=missing_model", info.requestID, info.requestPath)
+		writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error", "gateway: model must be a non-empty string")
+		return
+	}
+	info.model = model
+	info.requestModel = model
 
 	// Budget.
 	dayS, weekS, monthS := control.PeriodStarts(time.Now())
@@ -47,30 +64,22 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Routing: rewrite the model field, preserving all other fields verbatim.
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(body, &fields); err == nil {
-		var model string
-		_ = json.Unmarshal(fields["model"], &model)
-		if model != "" {
-			info.model = model
-			to, blocked := cfg.Routing.Route(model)
-			if blocked {
-				log.Printf("model blocked: %s", model)
-				writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error",
-					"ai-gateway: model "+model+" is blocked by routing config")
-				return
-			}
-			if to != model {
-				raw, err := json.Marshal(to)
-				if err == nil {
-					fields["model"] = raw
-					if nb, err := json.Marshal(fields); err == nil {
-						body = nb
-						info.routedFrom = model
-						info.model = to
-						log.Printf("routed model %s -> %s", model, to)
-					}
-				}
+	to, blocked := cfg.Routing.Route(model)
+	if blocked {
+		log.Printf("model blocked: %s", model)
+		writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error",
+			"ai-gateway: model "+model+" is blocked by routing config")
+		return
+	}
+	if to != model {
+		raw, err := json.Marshal(to)
+		if err == nil {
+			fields["model"] = raw
+			if nb, err := json.Marshal(fields); err == nil {
+				body = nb
+				info.routedFrom = model
+				info.model = to
+				log.Printf("routed model %s -> %s", model, to)
 			}
 		}
 	}
@@ -100,9 +109,11 @@ func (g *Gateway) serveCached(w http.ResponseWriter, hit *store.CachedResponse, 
 	w.WriteHeader(hit.Status)
 	_, _ = w.Write(hit.Body)
 	rec := store.Record{
+		RequestID: info.requestID, RequestModel: info.requestModel, RequestPath: info.requestPath, ModelSource: "cache",
 		TS: time.Now(), Model: hit.Model, CostUSD: 0,
 		LatencyMS: time.Since(info.start).Milliseconds(), Status: hit.Status,
 		CacheHit: true, SavedUSD: hit.CostUSD,
+		RoutedFrom: info.routedFrom,
 	}
 	if err := g.store.Insert(rec); err != nil {
 		log.Printf("store insert (cache hit) failed: %v", err)

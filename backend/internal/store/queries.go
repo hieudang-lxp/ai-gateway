@@ -34,7 +34,7 @@ type Call struct {
 }
 
 const callCols = `id, ts, model, routed_from, input_tokens, output_tokens,
-	cache_read_tokens, cache_write_tokens, est_cost_usd, latency_ms, status, cache_hit, saved_usd`
+	cache_read_tokens, cache_write_tokens, est_cost_usd, latency_ms, status, cache_hit, saved_usd,request_id,request_model,request_path,model_source,upstream_request_id`
 
 func (s *Store) scanCalls(query string, args ...any) ([]Call, error) {
 	rows, err := s.db.Query(query, args...)
@@ -49,7 +49,7 @@ func (s *Store) scanCalls(query string, args ...any) ([]Call, error) {
 		var cacheHit int
 		if err := rows.Scan(&c.ID, &ts, &c.Model, &c.RoutedFrom,
 			&c.Usage.Input, &c.Usage.Output, &c.Usage.CacheRead, &c.Usage.CacheWrite,
-			&c.CostUSD, &c.LatencyMS, &c.Status, &cacheHit, &c.SavedUSD); err != nil {
+			&c.CostUSD, &c.LatencyMS, &c.Status, &cacheHit, &c.SavedUSD, &c.RequestID, &c.RequestModel, &c.RequestPath, &c.ModelSource, &c.UpstreamRequestID); err != nil {
 			return nil, err
 		}
 		c.TS = time.Unix(ts, 0)

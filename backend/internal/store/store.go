@@ -17,15 +17,20 @@ type Usage = events.Usage
 
 // Record is one persisted call.
 type Record struct {
-	TS         time.Time
-	Model      string
-	Usage      Usage
-	CostUSD    float64
-	LatencyMS  int64
-	Status     int
-	RoutedFrom string
-	CacheHit   bool
-	SavedUSD   float64
+	RequestID         string
+	RequestModel      string
+	RequestPath       string
+	ModelSource       string
+	UpstreamRequestID string
+	TS                time.Time
+	Model             string
+	Usage             Usage
+	CostUSD           float64
+	LatencyMS         int64
+	Status            int
+	RoutedFrom        string
+	CacheHit          bool
+	SavedUSD          float64
 }
 
 // Store wraps the SQLite connection holding the calls table.
@@ -62,6 +67,11 @@ func OpenDSN(driver, dsn string) (*Store, error) {
 	}
 	// Migrate pre-existing DBs; "duplicate column" errors are expected and ignored.
 	for _, ddl := range []string{
+		`ALTER TABLE calls ADD COLUMN request_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE calls ADD COLUMN request_model TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE calls ADD COLUMN request_path TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE calls ADD COLUMN model_source TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE calls ADD COLUMN upstream_request_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE calls ADD COLUMN routed_from TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE calls ADD COLUMN cache_hit INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE calls ADD COLUMN saved_usd REAL NOT NULL DEFAULT 0`,
@@ -107,12 +117,13 @@ func (s *Store) Insert(r Record) error {
 	defer tx.Rollback()
 	result, err := tx.Exec(
 		`INSERT INTO calls
-		 (ts, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, est_cost_usd, latency_ms, status, routed_from, cache_hit, saved_usd)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (ts, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, est_cost_usd, latency_ms, status, routed_from, cache_hit, saved_usd,request_id,request_model,request_path,model_source,upstream_request_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?,?)`,
 		r.TS.Unix(), r.Model,
 		r.Usage.Input, r.Usage.Output, r.Usage.CacheRead, r.Usage.CacheWrite,
 		r.CostUSD, r.LatencyMS, r.Status,
 		r.RoutedFrom, boolToInt(r.CacheHit), r.SavedUSD,
+		r.RequestID, r.RequestModel, r.RequestPath, r.ModelSource, r.UpstreamRequestID,
 	)
 	if err != nil {
 		return err
@@ -264,11 +275,12 @@ func (s *Store) InsertSynced(c Call) error {
 	_, err := s.db.Exec(
 		`INSERT OR IGNORE INTO calls
 		 (local_id, ts, model, routed_from, input_tokens, output_tokens,
-		  cache_read_tokens, cache_write_tokens, est_cost_usd, latency_ms, status, cache_hit, saved_usd)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  cache_read_tokens, cache_write_tokens, est_cost_usd, latency_ms, status, cache_hit, saved_usd,request_id,request_model,request_path,model_source,upstream_request_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?,?)`,
 		c.ID, c.TS.Unix(), c.Model, c.RoutedFrom,
 		c.Usage.Input, c.Usage.Output, c.Usage.CacheRead, c.Usage.CacheWrite,
 		c.CostUSD, c.LatencyMS, c.Status, boolToInt(c.CacheHit), c.SavedUSD,
+		c.RequestID, c.RequestModel, c.RequestPath, c.ModelSource, c.UpstreamRequestID,
 	)
 	return err
 }

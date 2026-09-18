@@ -21,10 +21,14 @@ const infoKey ctxKey = 0
 
 // reqInfo travels with a request from dispatch through to finalize.
 type reqInfo struct {
-	model      string
-	start      time.Time
-	routedFrom string // original model if rewritten, else ""
-	cacheKey   string // non-empty → capture & store the response on success
+	requestID         string
+	requestModel      string
+	requestPath       string
+	upstreamRequestID string
+	model             string
+	start             time.Time
+	routedFrom        string // original model if rewritten, else ""
+	cacheKey          string // non-empty → capture & store the response on success
 }
 
 // Gateway is the reverse proxy plus the store it logs to.
@@ -57,6 +61,9 @@ func New(upstream string, st *store.Store, pr pricing.Pricing, ctl *control.Watc
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Printf("proxy error: %v", err)
 			w.WriteHeader(http.StatusBadGateway)
+			if info, ok := r.Context().Value(infoKey).(*reqInfo); ok {
+				g.finalize(newParser(false), http.StatusBadGateway, "", info, nil)
+			}
 		},
 		FlushInterval: -1, // flush immediately for SSE streaming
 	}
@@ -89,6 +96,10 @@ func (g *Gateway) modifyResponse(resp *http.Response) error {
 	if info == nil {
 		return nil // discovery/count_tokens are not billable message requests
 	}
+	info.upstreamRequestID = resp.Header.Get("request-id")
+	if info.upstreamRequestID == "" {
+		info.upstreamRequestID = resp.Header.Get("x-request-id")
+	}
 	contentType := resp.Header.Get("Content-Type")
 	sse := strings.Contains(contentType, "text/event-stream")
 	p := newParser(sse)
@@ -116,11 +127,14 @@ func (g *Gateway) finalize(p *parser, status int, contentType string, info *reqI
 	}()
 	p.finalize()
 	model := p.model
+	modelSource := "response"
 	if model == "" {
 		model = info.model
+		modelSource = "request"
 	}
 	if model == "" {
-		model = "unknown"
+		log.Printf("skip non-model accounting request_id=%s path=%s", info.requestID, info.requestPath)
+		return
 	}
 	cost := g.pricing.Cost(model, p.u.Input, p.u.Output, p.u.CacheRead, p.u.CacheWrite)
 	// CachePut BEFORE Insert: once the calls row is visible, the cache entry
@@ -135,6 +149,7 @@ func (g *Gateway) finalize(p *parser, status int, contentType string, info *reqI
 		}
 	}
 	rec := store.Record{
+		RequestID: info.requestID, RequestModel: info.requestModel, RequestPath: info.requestPath, ModelSource: modelSource, UpstreamRequestID: info.upstreamRequestID,
 		TS: time.Now(), Model: model, Usage: p.u, CostUSD: cost,
 		LatencyMS: time.Since(info.start).Milliseconds(), Status: status,
 		RoutedFrom: info.routedFrom,

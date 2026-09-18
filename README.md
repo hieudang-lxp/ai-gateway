@@ -283,9 +283,20 @@ separately; the old gateway DB is not a mirror of the new usage ledger.
 Unknown local routes now return a local 404 without calling Anthropic or
 recording a model call. Only `POST /v1/messages` is usage-accounted; model
 discovery and token-count endpoints pass through without accounting. Real
-message errors keep the requested model when the response omits it. Historical
-`unknown` errors remain visible as “Unidentified request” because their URL and
-request model were never stored; the migration does not invent or delete them.
+message errors (including transport failures) keep the outgoing model when the
+response omits it. Requests with invalid JSON or a missing/empty model return
+400 before reaching the provider and do not create fake usage rows.
+
+Expand **Request trace** under a Recent calls row to inspect the original model,
+request path, gateway request ID, provider request ID (when returned), and model
+source. `response` means the provider returned that model; `request` means only
+the outgoing model is known (after routing, if configured); `cache` means the
+model came from the cached response. The response header
+`X-Gateway-Request-Id` identifies each new message request. Traces store metadata,
+not prompts or credentials. Historical `unknown` rows remain visible as
+“Unidentified request”: their URL and request model were never stored, so they
+cannot be reconstructed without separate logs. The migration does not guess
+model names or delete historical rows, even those with HTTP 200 and zero usage.
 
 ## Terminal companion: `aictl`
 
