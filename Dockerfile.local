@@ -10,13 +10,17 @@ WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
-RUN CGO_ENABLED=0 go build -trimpath -o /gateway ./cmd/gateway
-RUN CGO_ENABLED=0 go build -trimpath -o /aictl ./cmd/aictl
+RUN CGO_ENABLED=0 go build -trimpath -o /gateway ./services/gateway
+RUN CGO_ENABLED=0 go build -trimpath -o /aictl ./cli/aictl
+RUN CGO_ENABLED=0 go build -trimpath -o /collector ./services/collector
+RUN CGO_ENABLED=0 go build -trimpath -o /usage ./services/usage
 
 FROM alpine:3.23
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=backend /gateway /usr/local/bin/gateway
 COPY --from=backend /aictl /usr/local/bin/aictl
+COPY --from=backend /collector /usr/local/bin/collector
+COPY --from=backend /usage /usr/local/bin/usage
 COPY --from=frontend /app/dist /app/dashboard
 ENV TZ=Asia/Ho_Chi_Minh
 EXPOSE 8788

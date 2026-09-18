@@ -11,15 +11,106 @@ services:
     volumes:
       - ${GATEWAY_DATA_DIR:-${HOME}/.local/share/ai-gateway}:/data
       - ${GATEWAY_CONFIG_DIR:-${HOME}/.config/ai-gateway}:/config:ro
-      - ${CODEX_SESSIONS_DIR:-${HOME}/.codex/sessions}:/sources/codex/sessions:ro
-      - ${CODEX_ARCHIVED_DIR:-${HOME}/.codex/archived_sessions}:/sources/codex/archived_sessions:ro
-      - ${CLAUDE_PROJECTS_DIR:-${HOME}/.claude/projects}:/sources/claude:ro
-      # Mount the directory so SQLite WAL rotations and token refreshes are visible.
-      # The collector queries only accessToken, cachedEmail and cachedTeam.
-      - ${CURSOR_STATE_DIR:-${HOME}/Library/Application Support/Cursor/User/globalStorage}:/sources/cursor:ro
     environment:
       TZ: Asia/Ho_Chi_Minh
-    logging:
+      USAGE_URL: http://usage:8790
+      NATS_URL: nats://nats:4222
+    depends_on:
+      usage:
+        condition: service_healthy
+    logging: &logging
       options:
         max-size: "10m"
         max-file: "3"
+
+  collector:
+    image: ai-gateway-local:latest
+    entrypoint: ["collector"]
+    command: []
+    restart: unless-stopped
+    volumes:
+      - collector-data:/data
+      - ${GATEWAY_CONFIG_DIR:-${HOME}/.config/ai-gateway}:/config:ro
+      - ${CODEX_SESSIONS_DIR:-${HOME}/.codex/sessions}:/sources/codex/sessions:ro
+      - ${CODEX_ARCHIVED_DIR:-${HOME}/.codex/archived_sessions}:/sources/codex/archived_sessions:ro
+      - ${CLAUDE_PROJECTS_DIR:-${HOME}/.claude/projects}:/sources/claude:ro
+      # Only the collector can access the Cursor session; directory mounts follow WAL rotations.
+      - ${CURSOR_STATE_DIR:-${HOME}/Library/Application Support/Cursor/User/globalStorage}:/sources/cursor:ro
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+      NATS_URL: nats://nats:4222
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8789/healthz"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+    logging: *logging
+
+  usage:
+    image: ai-gateway-local:latest
+    entrypoint: ["usage"]
+    command: []
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+      NATS_URL: nats://nats:4222
+      DATABASE_URL: postgres://usage@postgres:5432/usage?sslmode=disable
+      PGPASSWORD: ${POSTGRES_PASSWORD:-local-ai-gateway}
+    volumes:
+      - usage-prices:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8790/healthz"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+    logging: *logging
+
+  nats:
+    image: nats:2.12-alpine
+    command: ["--jetstream", "--store_dir", "/data", "--http_port", "8222"]
+    restart: unless-stopped
+    volumes:
+      - nats-data:/data
+    logging: *logging
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: usage
+      POSTGRES_DB: usage
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-ai-gateway}
+    volumes:
+      - usage-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U usage -d usage"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+  tests:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+      target: backend
+    entrypoint: ["go", "test"]
+    command: ["./...", "-count=1"]
+    environment:
+      TEST_DATABASE_URL: postgres://usage@postgres:5432/usage?sslmode=disable
+      PGPASSWORD: ${POSTGRES_PASSWORD:-local-ai-gateway}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  collector-data:
+  usage-data:
+  usage-prices:
+  nats-data:

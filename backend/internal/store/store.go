@@ -3,6 +3,8 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"github.com/hieudang-lxp/ai-gateway/backend/contracts/events"
+	"github.com/hieudang-lxp/ai-gateway/backend/internal/eventbus"
 	"os"
 	"path/filepath"
 	"time"
@@ -11,12 +13,7 @@ import (
 )
 
 // Usage is the token counts extracted from one Anthropic response.
-type Usage struct {
-	Input      int64
-	Output     int64
-	CacheRead  int64
-	CacheWrite int64
-}
+type Usage = events.Usage
 
 // Record is one persisted call.
 type Record struct {
@@ -33,7 +30,8 @@ type Record struct {
 
 // Store wraps the SQLite connection holding the calls table.
 type Store struct {
-	db *sql.DB
+	db          *sql.DB
+	eventOrigin string
 }
 
 func Open(path string) (*Store, error) {
@@ -102,7 +100,12 @@ CREATE TABLE IF NOT EXISTS cache (
 `
 
 func (s *Store) Insert(r Record) error {
-	_, err := s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(
 		`INSERT INTO calls
 		 (ts, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, est_cost_usd, latency_ms, status, routed_from, cache_hit, saved_usd)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -111,7 +114,22 @@ func (s *Store) Insert(r Record) error {
 		r.CostUSD, r.LatencyMS, r.Status,
 		r.RoutedFrom, boolToInt(r.CacheHit), r.SavedUSD,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	if s.eventOrigin != "" {
+		id, err := result.LastInsertId()
+		if err != nil {
+			return err
+		}
+		if err = eventbus.Enqueue(tx, events.Subject, events.Envelope{Rows: []events.ExternalUsage{s.callEvent(Call{ID: id, Record: r})}}); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`UPDATE gateway_event_state SET last_id=? WHERE id=1`, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func boolToInt(b bool) int {

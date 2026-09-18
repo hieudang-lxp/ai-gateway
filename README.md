@@ -7,14 +7,50 @@ model routing and response caching — plus a Connect RPC stats API and a React
 dashboard. The separate cloud deployment supports Netlify, Render, and Turso
 for proxy statistics; the three-tool collector runs locally.
 
-- `backend/` — Go binaries: `gateway` (server) and `aictl` (usage/diagnostics CLI)
+- `backend/` — Go services `gateway`, `collector`, `usage` and the `aictl` CLI
 - `proto/` — buf-managed Connect RPC schema
 - `frontend/` — React + Vite dashboard, shadcn/ui + Tailwind CSS
 
 The setup and maintenance guide below describes the current implementation.
 Historical design plans and the former scan service remain available in Git history.
 
-## Local Docker service: all three tools
+## Local Docker services: all three tools
+
+This monorepo runs three independent processes, NATS JetStream and PostgreSQL:
+
+| Service | Responsibility | Owned state |
+| --- | --- | --- |
+| `gateway` | Dashboard/API entry point, HTTP Anthropic proxy, cache and budgets | Existing `gateway.db` SQLite and transactional event outbox |
+| `collector` | Claude/Codex logs and Cursor API polling | Private SQLite outbox in `collector-data` |
+| `usage` | Deduplicate, price and aggregate events | PostgreSQL `usage` database and `usage-prices` cache |
+| `nats` | Durable event transport | `nats-data` JetStream volume |
+| `postgres` | Usage persistence | `usage-data` volume |
+
+Only gateway port 8788 is published, bound to localhost. The gateway forwards
+`/_usage` to the usage service over HTTP; Anthropic streaming also stays HTTP.
+Producers publish content-free metadata on `usage.ingested.v1`; collection
+status uses `collector.status.v1`. Only the collector mounts IDE logs and the
+Cursor session. Services do not read each other's databases during normal use.
+
+Producers queue locally before publishing and delete only after JetStream
+confirms storage. Gateway call/event writes share one transaction. Usage
+acknowledges after PostgreSQL commits; event receipts, source/event identities
+and alias tombstones prevent replay from double-counting. Statuses follow
+their imported batches. Dashboard totals are eventually consistent; overdue
+sync timestamps expose an outage while saved usage remains available.
+Invalid source records fail validation before enqueueing. Permanently invalid
+messages from the bus are acknowledged only after their fingerprint and reason
+are stored in `rejected_events`, so a poison message cannot block other sources.
+Database failures remain unacknowledged and retry. Inspect quarantine reasons
+with `docker compose exec -T postgres psql -U usage -d usage -c 'SELECT subject,
+reason,rejected_at FROM rejected_events ORDER BY rejected_at DESC LIMIT 20'`.
+
+JetStream retains up to 30 days / 2 GiB and rejects new messages at its size
+limit, leaving them queued locally. Monitor disk space and sync freshness.
+This is a single-node local deployment. The Compose PostgreSQL password default
+is for local development; override `POSTGRES_PASSWORD` before initializing a
+different environment. Project attribution, insights and alert rules are not
+part of this service extraction.
 
 ### First-time setup (macOS)
 
@@ -37,13 +73,13 @@ path below. Do not create an empty Cursor database to bypass this check.
 No `pricing.json` or `gateway.yaml` is required for collection: built-in
 defaults apply when these optional files are absent.
 
-4. Build and start the service:
+4. Build and start the services (existing users: migrate below first):
 
 ```sh
 docker compose up -d --build
 ```
 
-Open **http://localhost:8788/dashboard/**. The container runs continuously with
+Open **http://localhost:8788/dashboard/**. The services run continuously with
 `restart: unless-stopped`. Docker must be running and the host must be awake.
 Closing the dashboard does not stop collection. Initial imports run at startup;
 large local histories can take longer than a normal poll.
@@ -98,7 +134,7 @@ Claude costs are API-rate estimates from `pricing.json`, Cursor costs are report
 charges where available. Codex costs are calculated per request from exclusive
 input/cache-read/cache-write/output counts using the live LiteLLM public catalog:
 https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json
-The backend refreshes hourly, keeps an atomic disk cache alongside gateway.db,
+The usage service refreshes hourly, keeps an atomic disk cache in `usage-prices`,
 and exposes refresh time/errors/staleness in `/_usage`. Failed refreshes retain
 last good prices; initial offline defaults were verified on 2026-09-17 against
 https://developers.openai.com/api/docs/models/gpt-6-astra and
@@ -112,7 +148,7 @@ Subscription fees are not included: **this is not an invoice total**. Claude tot
 use retained transcripts once available, avoiding double-counting proxy requests;
 older gateway-only records remain in the clearly labelled proxy section. Importing
 external usage does not change proxy budget enforcement. Cursor refreshes 365 days
-of account history; imported history is retained in SQLite.
+of account history; imported history is retained in PostgreSQL.
 
 | Source | Cost basis | Updates |
 | --- | --- | --- |
@@ -135,7 +171,7 @@ The collector reads only `cursorAuth/accessToken`, `cursorAuth/cachedEmail` and
 
 | Variable | Default host path/value | Purpose |
 | --- | --- | --- |
-| `GATEWAY_DATA_DIR` | `$HOME/.local/share/ai-gateway` | Writable SQLite ledger and downloaded `model-prices.json` cache |
+| `GATEWAY_DATA_DIR` | `$HOME/.local/share/ai-gateway` | Gateway SQLite proxy history, cache and event outbox |
 | `GATEWAY_CONFIG_DIR` | `$HOME/.config/ai-gateway` | Optional `pricing.json` and `gateway.yaml`; mounted read-only |
 | `CODEX_SESSIONS_DIR` | `$HOME/.codex/sessions` | Active Codex sessions |
 | `CODEX_ARCHIVED_DIR` | `$HOME/.codex/archived_sessions` | Archived Codex sessions |
@@ -193,6 +229,7 @@ external usage is not synced to Turso by the proxy's existing sync mechanism.
 | Cursor API/schema error persists after signing in | Inspect the collector error; the private Cursor RPC may require a code update. Previously imported records remain available. |
 | Prices show stale/error | Check container access to `raw.githubusercontent.com`. Last good rates remain usable and the hourly refresh retries automatically. |
 | One source fails while others work | Read that source's `error` and `last_success` in `/_usage`; collectors operate independently. |
+| All sources stop updating | Check `docker compose logs usage collector nats` and PostgreSQL health. `docker compose exec -T collector wget -qO- http://127.0.0.1:8789/healthz` reports queued envelopes as `pending_events`; it should drain after NATS recovers. |
 
 ```sh
 docker compose up -d --build   # rebuild after pulling code updates
@@ -202,23 +239,71 @@ docker compose start         # resume
 docker compose down          # remove container/network; host data remains
 ```
 
-Persistent state is in `GATEWAY_DATA_DIR`, outside the container. Back up a live
+Proxy state is in `GATEWAY_DATA_DIR`, outside the container. Back up a live
 `gateway.db` with SQLite's `.backup` command (rather than copying only the main
 file while WAL writes are active). Protect that directory as account usage data.
+Unified usage is in `usage-data`; back it up with
+`docker compose exec -T postgres pg_dump -U usage -d usage > usage-backup.sql`.
+Keep collector and NATS volumes too: they can hold events not committed to the
+usage ledger yet. `docker compose down` preserves volumes; `down -v` deletes
+them and must not be used as a routine restart.
 The only authenticated collector network destination is `api2.cursor.sh`;
 public price downloads go to `raw.githubusercontent.com` without credentials.
 
-## Terminal companion: `aictl`
+### Upgrade an existing single-process installation
 
-The same repository builds two binaries with different responsibilities:
+The old SQLite ledger is not automatically discarded or replaced. Import a
+consistent snapshot before switching the dashboard to PostgreSQL:
 
-```text
-backend/cmd/
-├── gateway/    # long-running proxy, collectors, dashboard and cloud API
-└── aictl/      # read-only commands that call the local gateway API
+```sh
+docker compose build gateway
+docker compose up -d postgres nats
+docker compose stop gateway collector
+gateway_data="${GATEWAY_DATA_DIR:-$HOME/.local/share/ai-gateway}"
+gateway_snapshot="$gateway_data/gateway.pre-services-$(date +%Y%m%d-%H%M%S).db"
+sqlite3 "$gateway_data/gateway.db" ".backup '$gateway_snapshot'"
+docker compose run --rm --no-deps -v "$gateway_snapshot:/legacy.db:ro" usage -import-sqlite /legacy.db
+docker compose up -d
+docker compose exec -T gateway aictl doctor
 ```
 
-The local Docker image includes both. No host Go installation is needed:
+`sqlite3` is provided by macOS; install it on other hosts before migration.
+The importer reads only accounting rows, retains their IDs and can be rerun
+safely. Proxy history stays in the gateway DB and is also backfilled as events;
+Claude transcripts continue to suppress proxy fallback from unified totals.
+Compare source counts and all four token sums in `external_usage` (snapshot)
+against `usage_events` (PostgreSQL) before resuming collection. New collection
+can subsequently increase the totals. Keep the snapshot for rollback.
+
+To roll back temporarily, stop `collector`, `usage` and `gateway`, then run the
+previous Git revision's Compose setup against the retained gateway DB. Usage
+collected only after the split is in PostgreSQL and must be exported/migrated
+separately; the old gateway DB is not a mirror of the new usage ledger.
+
+Unknown local routes now return a local 404 without calling Anthropic or
+recording a model call. Only `POST /v1/messages` is usage-accounted; model
+discovery and token-count endpoints pass through without accounting. Real
+message errors keep the requested model when the response omits it. Historical
+`unknown` errors remain visible as “Unidentified request” because their URL and
+request model were never stored; the migration does not invent or delete them.
+
+## Terminal companion: `aictl`
+
+The same Go module builds three services and a companion CLI:
+
+```text
+backend/
+├── services/
+│   ├── gateway/   # HTTP entry point and Anthropic proxy
+│   ├── collector/ # collection and durable publishing
+│   └── usage/     # PostgreSQL ledger and summary API
+├── cli/aictl/     # read-only commands using gateway HTTP API
+├── contracts/events/ # versioned service event types
+└── internal/     # service implementations and shared packages
+```
+
+The image includes all binaries; Compose runs separate containers with their
+own entrypoints and state. No host Go installation is needed:
 
 ```sh
 docker compose exec -T gateway aictl status
@@ -232,7 +317,7 @@ To install a native CLI (Go matching `backend/go.mod` required):
 
 ```sh
 cd backend
-go install ./cmd/aictl
+go install ./cli/aictl
 cd ..
 "$(go env GOPATH)/bin/aictl" status
 ```
@@ -275,7 +360,7 @@ both components, so these host runtimes are optional for normal use.
 ```sh
 cd backend
 go test ./...
-go build ./cmd/gateway ./cmd/aictl
+go build ./services/gateway ./services/collector ./services/usage ./cli/aictl
 cd ../frontend
 npm ci
 npm test
@@ -284,6 +369,18 @@ npm run lint
 cd ..
 docker compose up -d --build
 ```
+
+Run PostgreSQL integration tests with:
+
+```sh
+docker compose --profile test run --build --rm tests
+```
+
+They create and remove temporary schemas without changing real usage. Plain
+`go test ./...` skips PostgreSQL tests unless `TEST_DATABASE_URL` is set.
+Coverage includes outbox rollback/restart, duplicate and alias replay, stale
+status ordering, and local-route/upstream-error regressions. The optional test
+service does not run during a normal Compose start.
 
 For frontend iteration, leave Docker running and run `npm run dev` in
 `frontend/`; its API defaults to localhost:8788. The production dashboard uses
@@ -305,7 +402,9 @@ use a 44px default height to accommodate the larger type. Verify imports use
 Relevant implementation entry points:
 
 - `backend/internal/usage/`: provider parsers, `collector.go` for polling and `summary.go` for the HTTP summary API.
-- `backend/internal/aictl/`: CLI commands, HTTP client, reports and diagnostics; `cmd/aictl/main.go` handles process exit only.
+- `backend/internal/aictl/`: CLI logic; `cli/aictl/main.go` handles process exit only.
+- `backend/internal/eventbus/`: SQLite outbox, JetStream publisher and durable consumer.
+- `backend/internal/ledger/`: PostgreSQL schema, usage reads and explicit legacy import.
 - `backend/internal/store/usage.go`: idempotent imports and consistent summaries.
 - `backend/internal/pricing/catalog.go`: hourly catalog refresh, disk cache and Codex estimates.
 - `frontend/src/features/usage/`: unified usage, period controls and source status.
@@ -326,7 +425,9 @@ requests routed through it; they do not intercept Codex or Cursor requests.
 Back up the live SQLite database using SQLite's backup API, then disable/unload
 the previous agent to free port 8788 before starting Compose. For example, save
 a timestamped backup under `~/.local/share/ai-gateway/gateway.before-docker-*.db`.
-The container reuses that directory and preserves the existing calls database.
+The gateway reuses that directory and preserves the existing calls database.
+If the installation already contains unified usage, follow the single-process
+upgrade steps above to import its history into PostgreSQL before resuming.
 
 For the existing `com.hieudang.ai-gateway` installation (adjust the label/path
 if yours differs):

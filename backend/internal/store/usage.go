@@ -3,20 +3,12 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"github.com/hieudang-lxp/ai-gateway/backend/contracts/events"
 	"time"
 )
 
 // ExternalUsage contains accounting metadata only, never conversation content.
-type ExternalUsage struct {
-	Aliases  []string // legacy identities superseded by a response-level record
-	Source   string
-	ID       string
-	TS       time.Time
-	Model    string
-	Usage    Usage
-	CostUSD  *float64 // nil means unavailable, not free.
-	CostKind string
-}
+type ExternalUsage = events.ExternalUsage
 
 const usageSchema = `CREATE TABLE IF NOT EXISTS external_usage (
  source TEXT NOT NULL, event_id TEXT NOT NULL, ts INTEGER NOT NULL, model TEXT NOT NULL,

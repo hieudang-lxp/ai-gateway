@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,6 +77,8 @@ func configPath(file string) string {
 
 func runServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	usageURL := fs.String("usage-url", os.Getenv("USAGE_URL"), "independent usage service URL; disables in-process collectors")
+	natsURL := fs.String("nats-url", os.Getenv("NATS_URL"), "NATS JetStream URL for durable proxy usage events")
 	home, _ := os.UserHomeDir()
 	collect := fs.Bool("collect", true, "automatically collect Codex, Claude Code and Cursor usage")
 	codexHome := fs.String("codex-home", filepath.Join(home, ".codex"), "Codex data root (sessions and archived_sessions)")
@@ -98,6 +102,14 @@ func runServe(args []string) {
 		log.Fatalf("open store: %v", err)
 	}
 	defer st.Close()
+	if *natsURL != "" {
+		if err := st.EnableEvents(); err != nil {
+			log.Fatalf("enable proxy outbox: %v", err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go st.PublishEvents(ctx, *natsURL)
+	}
 
 	ctl := control.NewWatcher(*config)
 	g, err := proxy.New(*upstream, st, pr, ctl)
@@ -119,7 +131,17 @@ func runServe(args []string) {
 	mux.Handle("/rpc/", http.StripPrefix("/rpc", rpcCORS.Handler(api.New(st, func() control.BudgetConfig {
 		return ctl.Current().Budget
 	}, ""))))
-	if *collect {
+	if *usageURL != "" {
+		target, err := url.Parse(*usageURL)
+		if err != nil || target.Host == "" {
+			log.Fatal("invalid usage service URL")
+		}
+		forward := httputil.NewSingleHostReverseProxy(target)
+		forward.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+			http.Error(w, "usage service unavailable", http.StatusServiceUnavailable)
+		}
+		mux.Handle("/_usage", rpcCORS.Handler(forward))
+	} else if *collect {
 		collector := usage.New(st, pr, usage.Config{PriceCache: filepath.Join(filepath.Dir(*dbPath), "model-prices.json"), CodexHome: *codexHome, ClaudeProjects: *claudeProjects, CursorState: *cursorState, CursorInterval: *cursorInterval, CursorHistoryDays: *cursorHistory})
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()

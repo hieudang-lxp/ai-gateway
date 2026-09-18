@@ -70,7 +70,7 @@ export function RecentCalls() {
                   {new Date(Number(c.tsUnix) * 1000).toLocaleString("vi-VN")}
                 </TableCell>
                 <TableCell className="font-mono text-xs text-sky-900">
-                  {c.model}
+                  {c.model === "unknown" ? "Unidentified request" : c.model}
                   {c.routedFrom && (
                     <Badge variant="secondary" className="ml-1.5 bg-sky-100 text-sky-800">
                       ← {c.routedFrom}
@@ -116,6 +116,7 @@ export function RecentCalls() {
           </TableBody>
         </Table>
       </div>
+      {calls.some(c => c.model === "unknown" && c.status >= 400) && <p className="mt-3 text-xs text-slate-500">Older failed requests did not retain a model or URL. Their HTTP errors are preserved here; zero tokens means no usage was recorded, not a successful model call.</p>}
       {calls.length === 0 && (
         <div className="py-6 text-center text-sm text-slate-400">
           No calls yet

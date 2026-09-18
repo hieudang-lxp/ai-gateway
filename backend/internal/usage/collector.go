@@ -3,6 +3,7 @@ package usage
 import (
 	"context"
 	"fmt"
+	"github.com/hieudang-lxp/ai-gateway/backend/contracts/events"
 	"io/fs"
 	"log"
 	"os"
@@ -21,22 +22,24 @@ type Config struct {
 	CursorHistoryDays                      int
 	PriceCache                             string
 }
-type SourceStatus struct {
-	State       string     `json:"state"`
-	LastAttempt time.Time  `json:"last_attempt"`
-	LastSuccess *time.Time `json:"last_success"`
-	Error       string     `json:"error,omitempty"`
-	Files       int        `json:"files,omitempty"`
-	PollSeconds int        `json:"poll_seconds"`
+type SourceStatus = events.SourceStatus
+type Sink interface {
+	ImportUsage([]store.ExternalUsage) error
+}
+type SummaryStore interface {
+	PricedUsageSince(time.Time, func(string, int64, int64, int64, int64) (float64, bool)) ([]store.UsageRow, error)
 }
 type Collector struct {
-	store   *store.Store
-	prices  pricing.Pricing
-	catalog *pricing.Catalog
-	config  Config
-	mu      sync.RWMutex
-	status  map[string]SourceStatus
-	files   map[string]string
+	store      SummaryStore
+	sink       Sink
+	statusSink func(string, SourceStatus) error
+	statuses   func() (map[string]SourceStatus, error)
+	prices     pricing.Pricing
+	catalog    *pricing.Catalog
+	config     Config
+	mu         sync.RWMutex
+	status     map[string]SourceStatus
+	files      map[string]string
 }
 
 func New(s *store.Store, p pricing.Pricing, c Config) *Collector {
@@ -57,11 +60,28 @@ func New(s *store.Store, p pricing.Pricing, c Config) *Collector {
 		}
 		status[source] = SourceStatus{State: "starting", PollSeconds: int(interval.Seconds())}
 	}
-	return &Collector{catalog: pricing.NewCatalog(c.PriceCache), store: s, prices: p, config: c, status: status, files: map[string]string{}}
+	return &Collector{catalog: pricing.NewCatalog(c.PriceCache), store: s, sink: s, prices: p, config: c, status: status, files: map[string]string{}}
 }
 
+func NewWorker(sink Sink, statusSink func(string, SourceStatus) error, p pricing.Pricing, cfg Config) *Collector {
+	c := New(nil, p, cfg)
+	c.store = nil
+	c.sink = sink
+	c.statusSink = statusSink
+	return c
+}
+func NewSummary(s SummaryStore, statuses func() (map[string]SourceStatus, error), cfg Config) *Collector {
+	c := New(nil, nil, cfg)
+	c.store = s
+	c.statuses = statuses
+	return c
+}
+func (c *Collector) RunPrices(ctx context.Context) { go c.catalog.Run(ctx) }
+
 func (c *Collector) Run(ctx context.Context) {
-	go c.catalog.Run(ctx)
+	if c.store != nil {
+		c.RunPrices(ctx)
+	}
 	go func() {
 		c.CollectLocal()
 		ticker := time.NewTicker(c.config.LocalInterval)
@@ -107,6 +127,11 @@ func (c *Collector) finish(source string, files int, err error) {
 		s.LastSuccess = &now
 	}
 	c.status[source] = s
+	if c.statusSink != nil {
+		if err := c.statusSink(source, s); err != nil {
+			log.Printf("status outbox failed: %v", err)
+		}
+	}
 }
 
 func (c *Collector) CollectLocal() {
@@ -159,7 +184,7 @@ func (c *Collector) CollectLocal() {
 					}
 					return nil
 				}
-				if err = c.store.ImportUsage(rows); err != nil {
+				if err = c.sink.ImportUsage(rows); err != nil {
 					return err
 				}
 				c.files[path] = signature
@@ -183,7 +208,7 @@ func (c *Collector) CollectCursor(ctx context.Context) {
 		now := time.Now()
 		rows, err = NewCursorClient().Fetch(ctx, creds, now.AddDate(0, 0, -c.config.CursorHistoryDays), now)
 		if err == nil {
-			err = c.store.ImportUsage(rows)
+			err = c.sink.ImportUsage(rows)
 		}
 	}
 	c.finish("cursor", 0, err)

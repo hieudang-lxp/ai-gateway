@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"log"
 	"net/http"
@@ -22,6 +21,7 @@ const infoKey ctxKey = 0
 
 // reqInfo travels with a request from dispatch through to finalize.
 type reqInfo struct {
+	model      string
 	start      time.Time
 	routedFrom string // original model if rewritten, else ""
 	cacheKey   string // non-empty → capture & store the response on success
@@ -69,8 +69,16 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.handleMessages(w, r)
 		return
 	}
-	info := &reqInfo{start: time.Now()}
-	g.proxy.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), infoKey, info)))
+	if (r.Method == http.MethodGet && (r.URL.Path == "/v1/models" || strings.HasPrefix(r.URL.Path, "/v1/models/"))) || (r.Method == http.MethodPost && r.URL.Path == "/v1/messages/count_tokens") {
+		g.proxy.ServeHTTP(w, r)
+		return
+	}
+	if r.URL.Path == "/v1/messages" {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	http.NotFound(w, r)
 }
 
 // modifyResponse wraps the response body so usage is extracted as it streams to
@@ -79,7 +87,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (g *Gateway) modifyResponse(resp *http.Response) error {
 	info, _ := resp.Request.Context().Value(infoKey).(*reqInfo)
 	if info == nil {
-		info = &reqInfo{start: time.Now()}
+		return nil // discovery/count_tokens are not billable message requests
 	}
 	contentType := resp.Header.Get("Content-Type")
 	sse := strings.Contains(contentType, "text/event-stream")
@@ -108,6 +116,9 @@ func (g *Gateway) finalize(p *parser, status int, contentType string, info *reqI
 	}()
 	p.finalize()
 	model := p.model
+	if model == "" {
+		model = info.model
+	}
 	if model == "" {
 		model = "unknown"
 	}

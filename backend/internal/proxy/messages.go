@@ -52,6 +52,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		var model string
 		_ = json.Unmarshal(fields["model"], &model)
 		if model != "" {
+			info.model = model
 			to, blocked := cfg.Routing.Route(model)
 			if blocked {
 				log.Printf("model blocked: %s", model)
@@ -66,6 +67,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 					if nb, err := json.Marshal(fields); err == nil {
 						body = nb
 						info.routedFrom = model
+						info.model = to
 						log.Printf("routed model %s -> %s", model, to)
 					}
 				}
