@@ -1,4 +1,7 @@
 import { useQuery } from "@connectrpc/connect-query";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { StatsService } from "../../gen/gateway/v1/stats_pb";
 import type { BudgetWindow } from "../../gen/gateway/v1/stats_pb";
 import { barState } from "./budget";
@@ -22,11 +25,11 @@ function Bar({ label, w }: { label: string; w?: BudgetWindow }) {
         <span className="font-medium text-slate-600">
           {label}
           {level !== "ok" && (
-            <span
+            <Badge
               className={`ml-2 rounded-full px-2 py-0.5 text-[12px] font-semibold uppercase tracking-wide text-white ${FILL[level]}`}
             >
               {LABEL[level]}
-            </span>
+            </Badge>
           )}
         </span>
         <span className="font-semibold tabular-nums text-sky-950">
@@ -37,12 +40,7 @@ function Bar({ label, w }: { label: string; w?: BudgetWindow }) {
         </span>
       </div>
       {cap !== null ? (
-        <div className="h-2.5 overflow-hidden rounded-full bg-sky-100">
-          <div
-            className={`h-full rounded-full ${FILL[level]} transition-[width] duration-500`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
+        <Progress value={pct} aria-label={`${label} budget`} aria-valuetext={`${fmt(spent)} of ${fmt(cap)}`} className={`h-2.5 bg-sky-100 ${level === "over" ? "[&>[data-slot=progress-indicator]]:bg-red-600" : level === "warn" ? "[&>[data-slot=progress-indicator]]:bg-amber-600" : "[&>[data-slot=progress-indicator]]:bg-sky-700"}`} />
       ) : (
         <div className="text-xs text-slate-400">no limit set</div>
       )}
@@ -53,13 +51,13 @@ function Bar({ label, w }: { label: string; w?: BudgetWindow }) {
 export function BudgetBars() {
   const { data } = useQuery(StatsService.method.overview, {});
   return (
-    <section className="grid h-full gap-5 rounded-2xl border border-sky-100 bg-white p-6 shadow-sm">
+    <Card className="grid h-full gap-5 p-6">
       <h2 className="text-sm font-semibold uppercase tracking-wide text-sky-900">
         Budget
       </h2>
       <Bar label="Today" w={data?.today} />
       <Bar label="This week" w={data?.week} />
       <Bar label="This month" w={data?.month} />
-    </section>
+    </Card>
   );
 }

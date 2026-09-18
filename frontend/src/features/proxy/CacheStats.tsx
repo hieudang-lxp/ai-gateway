@@ -1,4 +1,5 @@
 import { useQuery } from "@connectrpc/connect-query";
+import { Card } from "@/components/ui/card";
 import { StatsService } from "../../gen/gateway/v1/stats_pb";
 import { compactTokens } from "../../lib/format";
 import { useCurrency } from "../currency/useCurrency";
@@ -15,13 +16,13 @@ function Tile({
   title?: string;
 }) {
   return (
-    <div className="min-w-0 rounded-xl bg-sky-50/60 p-4" title={title}>
+    <Card className="min-w-0 gap-0 border-0 bg-sky-50/60 p-4 shadow-none" title={title}>
       <div className="text-xs font-medium text-slate-500">{label}</div>
       <div className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-sky-950 [overflow-wrap:anywhere]">
         {value}
       </div>
       {sub && <div className="mt-0.5 text-[13px] text-slate-400">{sub}</div>}
-    </div>
+    </Card>
   );
 }
 
@@ -49,7 +50,7 @@ export function CacheStats() {
   const rate = total > 0 ? ((hits / total) * 100).toFixed(1) + "%" : "—";
 
   return (
-    <section className="grid h-full grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-4 rounded-2xl border border-sky-100 bg-white p-6 shadow-sm">
+    <Card className="grid h-full grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-4 p-6">
       <Tile label="Total calls" value={total.toLocaleString()} sub="all time" />
       <Tile
         label="Input tokens"
@@ -81,6 +82,6 @@ export function CacheStats() {
         sub={`${hits.toLocaleString()} hits · ${rate}`}
         title="Cache exact-match của gateway (bật trong gateway.yaml) — khác prompt-cache của Anthropic"
       />
-    </section>
+    </Card>
   );
 }

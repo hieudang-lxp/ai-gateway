@@ -9,7 +9,7 @@ for proxy statistics; the three-tool collector runs locally.
 
 - `backend/` — Go binaries: `gateway` (server) and `aictl` (usage/diagnostics CLI)
 - `proto/` — buf-managed Connect RPC schema
-- `frontend/` — React + Vite dashboard
+- `frontend/` — React + Vite dashboard, shadcn/ui + Tailwind CSS
 
 The setup and maintenance guide below describes the current implementation.
 Historical design plans and the former scan service remain available in Git history.
@@ -60,6 +60,8 @@ Data & Pricing leads with sync health, each tool's amount and its pricing basis,
 then highlights unpriced events and substitute Codex prices. Collection details
 are expandable. The shared typography scale in `frontend/src/index.css` keeps
 both pages readable with larger text.
+The header shows one sync timestamp with a green status dot when all collectors
+are healthy; warnings remain visible if collection falls behind.
 
 ### What is collected
 
@@ -285,7 +287,22 @@ docker compose up -d --build
 
 For frontend iteration, leave Docker running and run `npm run dev` in
 `frontend/`; its API defaults to localhost:8788. The production dashboard uses
-the same origin. Relevant implementation entry points:
+the same origin.
+
+UI primitives come from [shadcn/ui](https://ui.shadcn.com): Select, Button, Card,
+Table, Badge, Input, Label, Alert, Accordion, Progress, Toggle Group, Navigation
+Menu and Chart. The chart uses shadcn's Recharts integration. Use these shared
+components instead of building another native control or custom UI primitive.
+Feature components still own fetching, formatting and domain logic.
+
+To add a component, run `npx shadcn@latest add <component>` from `frontend/`.
+`components.json` configures the registry and `@/` aliases. Generated source is
+checked into `src/components/ui/`; it is normal for shadcn to live in the repo.
+Theme colors, radius and typography live in `src/index.css`. Shared controls
+use a 44px default height to accommodate the larger type. Verify imports use
+`@/lib/utils`, review dependency changes, and run the frontend checks above.
+
+Relevant implementation entry points:
 
 - `backend/internal/usage/`: provider parsers, `collector.go` for polling and `summary.go` for the HTTP summary API.
 - `backend/internal/aictl/`: CLI commands, HTTP client, reports and diagnostics; `cmd/aictl/main.go` handles process exit only.
@@ -295,7 +312,7 @@ the same origin. Relevant implementation entry points:
 - `frontend/src/features/proxy/`: proxy budgets, cache, charts and request diagnostics.
 - `frontend/src/features/auth/`: dashboard token handling and authentication boundary.
 - `frontend/src/features/currency/`: currency context, exchange rates and formatting.
-- `frontend/src/components/`: shared layout; `lib/`: shared transport/format helpers.
+- `frontend/src/components/`: shared header; `components/ui/`: shadcn primitives; `lib/`: shared transport/format helpers and `cn` class merging.
 - `backend/gen/` and `frontend/src/gen/`: generated clients; edit `proto/` and run `buf generate` to regenerate, rather than editing generated files.
 - `compose.yaml` / `Dockerfile.local`: local deployment; `Dockerfile`: cloud API.
 

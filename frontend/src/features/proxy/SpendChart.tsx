@@ -1,11 +1,11 @@
 import { useQuery } from "@connectrpc/connect-query";
+import { Card } from "@/components/ui/card";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import {
-  ResponsiveContainer,
   BarChart,
   Bar,
   XAxis,
   YAxis,
-  Tooltip,
   CartesianGrid,
 } from "recharts";
 import { StatsService } from "../../gen/gateway/v1/stats_pb";
@@ -23,11 +23,11 @@ export function SpendChart() {
     calls: Number(p.calls),
   }));
   return (
-    <section className="rounded-2xl border border-sky-100 bg-white p-6 shadow-sm">
+    <Card className="gap-0 p-6">
       <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-sky-900">
         Spend — last 30 days
       </h2>
-      <ResponsiveContainer width="100%" height={240}>
+      <ChartContainer config={{ cost: { label: "Cost", color: OCEAN } }} className="h-60 w-full">
         <BarChart data={points} barCategoryGap="25%">
           <CartesianGrid vertical={false} stroke="#e0f2fe" />
           <XAxis
@@ -46,18 +46,9 @@ export function SpendChart() {
             axisLine={false}
             tick={{ fill: "#64748b" }}
           />
-          <Tooltip
+          <ChartTooltip
             cursor={{ fill: "#f0f9ff" }}
-            contentStyle={{
-              borderRadius: 12,
-              border: "1px solid #bae6fd",
-              boxShadow: "0 4px 12px rgba(12,74,110,0.08)",
-              fontSize: 14,
-            }}
-            labelStyle={{ color: "#0c4a6e", fontWeight: 600 }}
-            formatter={(v, name) =>
-              name === "cost" ? [fmt(Number(v)), "cost"] : [v, name]
-            }
+            content={<ChartTooltipContent formatter={value => <span className="flex w-full justify-between gap-4"><span>Cost</span><span className="font-semibold tabular-nums">{fmt(Number(value))}</span></span>} />}
           />
           <Bar
             dataKey="cost"
@@ -66,7 +57,7 @@ export function SpendChart() {
             isAnimationActive={false}
           />
         </BarChart>
-      </ResponsiveContainer>
-    </section>
+      </ChartContainer>
+    </Card>
   );
 }
