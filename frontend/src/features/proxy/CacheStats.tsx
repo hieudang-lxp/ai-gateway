@@ -20,7 +20,7 @@ function Tile({
       <div className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-sky-950">
         {value}
       </div>
-      {sub && <div className="mt-0.5 text-[11px] text-slate-400">{sub}</div>}
+      {sub && <div className="mt-0.5 text-[13px] text-slate-400">{sub}</div>}
     </div>
   );
 }

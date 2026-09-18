@@ -56,6 +56,10 @@ selected period and currency; a fresh page load defaults to the current month.
 The shared sync indicator flags missing/overdue collectors and connection errors.
 “Refresh status” reloads the API snapshot; it does not trigger a collector poll.
 Project attribution and historical price snapshots are not implemented yet.
+Data & Pricing leads with sync health, each tool's amount and its pricing basis,
+then highlights unpriced events and substitute Codex prices. Collection details
+are expandable. The shared typography scale in `frontend/src/index.css` keeps
+both pages readable with larger text.
 
 ### What is collected
 

@@ -23,7 +23,7 @@ function Bar({ label, w }: { label: string; w?: BudgetWindow }) {
           {label}
           {level !== "ok" && (
             <span
-              className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white ${FILL[level]}`}
+              className={`ml-2 rounded-full px-2 py-0.5 text-[12px] font-semibold uppercase tracking-wide text-white ${FILL[level]}`}
             >
               {LABEL[level]}
             </span>

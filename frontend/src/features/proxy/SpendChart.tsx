@@ -32,16 +32,16 @@ export function SpendChart() {
           <CartesianGrid vertical={false} stroke="#e0f2fe" />
           <XAxis
             dataKey="date"
-            fontSize={11}
+            fontSize={13}
             interval={4}
             tickLine={false}
             axisLine={{ stroke: "#bae6fd" }}
             tick={{ fill: "#64748b" }}
           />
           <YAxis
-            fontSize={11}
+            fontSize={13}
             tickFormatter={(v: number) => fmt(v)}
-            width={90}
+            width={105}
             tickLine={false}
             axisLine={false}
             tick={{ fill: "#64748b" }}
@@ -52,7 +52,7 @@ export function SpendChart() {
               borderRadius: 12,
               border: "1px solid #bae6fd",
               boxShadow: "0 4px 12px rgba(12,74,110,0.08)",
-              fontSize: 12,
+              fontSize: 14,
             }}
             labelStyle={{ color: "#0c4a6e", fontWeight: 600 }}
             formatter={(v, name) =>

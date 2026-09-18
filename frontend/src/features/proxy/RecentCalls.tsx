@@ -72,12 +72,12 @@ export function RecentCalls() {
                 <td className="font-mono text-xs text-sky-900">
                   {c.model}
                   {c.routedFrom && (
-                    <span className="ml-1.5 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
+                    <span className="ml-1.5 rounded-full bg-sky-100 px-2 py-0.5 text-[12px] font-semibold text-sky-800">
                       ← {c.routedFrom}
                     </span>
                   )}
                   {c.cacheHit && (
-                    <span className="ml-1.5 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                    <span className="ml-1.5 rounded-full bg-emerald-100 px-2 py-0.5 text-[12px] font-semibold text-emerald-800">
                       cache{c.savedUsd > 0 && ` +${fmt(c.savedUsd)}`}
                     </span>
                   )}
@@ -102,7 +102,7 @@ export function RecentCalls() {
                 </td>
                 <td className="text-right">
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    className={`rounded-full px-2 py-0.5 text-[12px] font-semibold ${
                       c.status >= 400
                         ? "bg-red-100 text-red-700"
                         : "bg-sky-50 text-sky-700"
