@@ -1,32 +1,14 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { apiBaseURL } from "../../lib/transport";
-import { summarizeUsage, type UsageCounts } from "./usage";
+import { summarizeUsage } from "./usage";
 import { useCurrency } from "../currency/useCurrency";
+import { sourceNames as names, useUsageSummary } from "./useUsageSummary";
 
-type Row = UsageCounts & { source: string; model: string; estimated_cost_calls: number; fallback_cost_calls: number; first_ts: number; last_ts: number };
-type Status = { state: string; last_success: string | null; error?: string; poll_seconds: number };
-type Summary = { pricing: { source: string; updated_at: string; stale: boolean; error?: string }; rows: Row[]; sources: Record<string, Status>; cursor_history_days: number; since: string; generated_at: string };
-const names: Record<string, string> = { claude_code: "Claude Code", claude_gateway: "Claude gateway", codex: "Codex", cursor: "Cursor" };
 const number = (n: number) => n.toLocaleString();
 const short = (n: number) => new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 2 }).format(n);
 const date = (ts: number) => new Date(ts * 1000).toLocaleDateString();
 
-export function UnifiedUsage() {
-  const [period, setPeriod] = useState("month");
+export function UnifiedUsage({ period, setPeriod }: { period: string; setPeriod: (period: string) => void }) {
   const { fmt } = useCurrency();
-  const { data, error, isPending, isFetching } = useQuery<Summary>({
-    queryKey: ["unified-usage", period],
-    queryFn: async () => {
-      const url = new URL("/_usage", apiBaseURL);
-      url.searchParams.set(period === "month" ? "period" : "days", period);
-      const response = await fetch(url, { cache: "no-store" });
-      if (!response.ok) throw new Error(`Collector unavailable (HTTP ${response.status}). Open the local Docker dashboard.`);
-      return response.json();
-    },
-    refetchInterval: 30_000,
-    retry: 1,
-  });
+  const { data, error, isPending, isFetching } = useUsageSummary(period);
   const rows = data?.rows ?? [];
   const total = summarizeUsage(rows);
   const healthy = data && Object.values(data.sources).every(s => s.state === "ok");
@@ -67,11 +49,7 @@ export function UnifiedUsage() {
           })}
         </div>
         {!healthy && <p role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Some collectors are starting or need attention. Totals show the records collected so far.</p>}
-        <p className="mb-4 text-xs leading-relaxed text-slate-500">Codex value = input + cache read + cache write + output tokens × current standard API rates, with context tiers applied per request. This excludes Fast/priority premiums. Unlisted models (including codex-auto-review) use GPT-5.6 Sol as a fallback estimate; missing cache-write rates use regular input rates. Claude costs use configured API rate estimates; Cursor uses reported charges when present. Subscription fees are not included. Claude totals use retained transcripts only once available: older gateway-only history is excluded here and remains in the proxy section below. Cursor refreshes up to {data.cursor_history_days} days of history; retained local logs determine Claude/Codex coverage.</p>
-        <p className={`mb-4 text-xs ${data.pricing.stale || data.pricing.error ? "text-amber-700" : "text-slate-500"}`}>
-          Codex prices: <a href={data.pricing.source} target="_blank" rel="noreferrer" className="underline">LiteLLM catalog</a> · refreshes hourly · {data.pricing.updated_at.startsWith("0001") ? "bundled fallback rates (17/09/2026)" : `updated ${new Date(data.pricing.updated_at).toLocaleString()}`}
-          {data.pricing.stale && " · stale prices; retrying automatically"}{data.pricing.error && ` · ${data.pricing.error}`}. Historical usage is valued at current prices.
-        </p>
+        <p className="mb-4 text-xs leading-relaxed text-slate-500">Usage value includes API estimates and reported charges; subscription fees are excluded. <a href="#data-pricing" className="font-medium text-sky-700 underline underline-offset-4">Check sources, coverage & pricing assumptions →</a></p>
         <details>
           <summary className="cursor-pointer text-sm font-medium text-sky-800">Models and token breakdown {isFetching && "· updating"}</summary>
           <div className="mt-3 overflow-x-auto"><table className="w-full text-right text-xs tabular-nums"><thead className="border-b border-sky-100 text-slate-500"><tr><th className="py-2 text-left">Source / model</th><th>Events</th><th>Input</th><th>Output</th><th>Cache read</th><th>Cache write</th><th>Known value</th></tr></thead><tbody>

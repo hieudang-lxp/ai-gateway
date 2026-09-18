@@ -48,6 +48,15 @@ Open **http://localhost:8788/dashboard/**. The container runs continuously with
 Closing the dashboard does not stop collection. Initial imports run at startup;
 large local histories can take longer than a normal poll.
 
+The header links to **Overview** (usage, period filters and proxy diagnostics)
+and **Data & Pricing** (collector status, coverage, price freshness and fallback
+assumptions). Links use `#overview` / `#data-pricing`, so refresh and browser
+Back/Forward work without server routing changes. Switching views preserves the
+selected period and currency; a fresh page load defaults to the current month.
+The shared sync indicator flags missing/overdue collectors and connection errors.
+“Refresh status” reloads the API snapshot; it does not trigger a collector poll.
+Project attribution and historical price snapshots are not implemented yet.
+
 ### What is collected
 
 - **Claude Code**: reads retained `~/.claude/projects` transcripts every minute,
