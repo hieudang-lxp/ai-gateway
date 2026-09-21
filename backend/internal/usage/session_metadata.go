@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// Metadata only: never synthesize titles from prompt or response text.
 func metadataText(value string, limit int) string {
 	value = strings.TrimSpace(strings.ReplaceAll(value, "\x00", ""))
 	runes := []rune(value)

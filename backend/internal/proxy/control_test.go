@@ -27,8 +27,6 @@ func watcherFor(t *testing.T, yaml string) *control.Watcher {
 	return control.NewWatcher(p)
 }
 
-// upstreamJSON returns a counting upstream that answers a fixed JSON message
-// and reports the model it received in the request body.
 func upstreamJSON(t *testing.T, gotModel *atomic.Value, hits *atomic.Int64) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +70,7 @@ func TestBudgetHardBlocks(t *testing.T) {
 	up := upstreamJSON(t, &gotModel, &hits)
 	defer up.Close()
 	st := newTestStore(t)
-	// seed spend over the daily hard limit
+
 	if err := st.Insert(store.Record{TS: time.Now(), Model: "m", CostUSD: 100, Status: 200}); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +146,7 @@ func TestCacheHitServesStoredResponse(t *testing.T) {
 
 	req := `{"model":"claude-sonnet-5","messages":[{"role":"user","content":"hi"}]}`
 	_, first := postMessages(t, srv.URL, req)
-	waitForStats(t, st, 1) // ensure finalize (and CachePut) ran
+	waitForStats(t, st, 1)
 	_, second := postMessages(t, srv.URL, req)
 	if hits.Load() != 1 {
 		t.Fatalf("upstream hits = %d want 1", hits.Load())
@@ -156,7 +154,7 @@ func TestCacheHitServesStoredResponse(t *testing.T) {
 	if first != second {
 		t.Fatalf("cached response differs:\n%s\n%s", first, second)
 	}
-	// second row must be a cache hit with savings and zero cost
+
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		hitsN, saved, err := st.CacheSavings()
@@ -187,7 +185,7 @@ func TestNonMessagesPathsBypassControl(t *testing.T) {
 		w.WriteHeader(200)
 	}))
 	defer up.Close()
-	// hard block active, but GET /v1/models must pass through
+
 	ctl := watcherFor(t, "budget:\n  daily_usd: {hard: 0.000001}\n")
 	st := newTestStore(t)
 	_ = st.Insert(store.Record{TS: time.Now(), Model: "m", CostUSD: 1, Status: 200})

@@ -28,7 +28,7 @@ func TestNamedConsumersFanOutAndResumeDurableCursor(t *testing.T) {
 	t.Cleanup(nc.Close)
 	suffix := uuid.NewString()
 	sessionsName, insightsName := "sessions-test-"+suffix, "insights-test-"+suffix
-	// Delete only this test's cursors; other tests may share the event stream.
+
 	for _, name := range []string{sessionsName, insightsName} {
 		t.Cleanup(func() {
 			if err := js.DeleteConsumer(events.Stream, name); err != nil && !errors.Is(err, nats.ErrConsumerNotFound) {
@@ -48,7 +48,7 @@ func TestNamedConsumersFanOutAndResumeDurableCursor(t *testing.T) {
 		go func() {
 			defer close(r.done)
 			r.err = consumeNamed(runCtx, js, name, func(e events.Envelope) error {
-				// Ignore unrelated retained history without touching its contents.
+
 				if e.ID != firstID && e.ID != missedID {
 					return nil
 				}
@@ -96,8 +96,7 @@ func TestNamedConsumersFanOutAndResumeDurableCursor(t *testing.T) {
 	}
 	awaitAck := func(name string, sequence uint64) {
 		t.Helper()
-		// Broker state changes asynchronously after apply returns; poll its cursor
-		// with a deadline instead of assuming an arbitrary sleep is sufficient.
+
 		ticker := time.NewTicker(10 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -161,8 +160,7 @@ func TestNamedConsumersFanOutAndResumeDurableCursor(t *testing.T) {
 		sessionDeliveries <- e.ID
 		return nil
 	})
-	// The first event was acknowledged before shutdown, so a recreated cursor
-	// would incorrectly deliver firstID here instead of the missed event.
+
 	awaitDelivery(resumed, sessionDeliveries, missedID)
 	awaitAck(sessionsName, missedSequence)
 }

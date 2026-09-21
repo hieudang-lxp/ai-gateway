@@ -14,7 +14,6 @@ import (
 
 const CatalogURL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
 
-// TokenRates uses USD per token, as published in LiteLLM's public catalog.
 type TokenRates map[string]float64
 type CatalogSnapshot struct {
 	Models    map[string]TokenRates `json:"models"`
@@ -28,7 +27,7 @@ type Catalog struct {
 }
 
 func NewCatalog(path string) *Catalog {
-	// Verified official standard API rates, 2026-09-17. Used only before first fetch.
+
 	models := map[string]TokenRates{}
 	for name, r := range map[string]Rates{"gpt-6-astra": {10, 50, 1, 12.5}, "gpt-5.6-sol": {4, 20, 0.4, 5}} {
 		models[name] = TokenRates{"input_cost_per_token": r.Input / 1e6, "output_cost_per_token": r.Output / 1e6, "cache_read_input_token_cost": r.CacheRead / 1e6, "cache_creation_input_token_cost": r.CacheWrite / 1e6, "input_cost_per_token_above_272k_tokens": r.Input * 2 / 1e6, "output_cost_per_token_above_272k_tokens": r.Output * 1.5 / 1e6, "cache_read_input_token_cost_above_272k_tokens": r.CacheRead * 2 / 1e6, "cache_creation_input_token_cost_above_272k_tokens": r.CacheWrite * 2 / 1e6}
@@ -117,8 +116,6 @@ func (c *Catalog) fetch(ctx context.Context) (CatalogSnapshot, error) {
 	return CatalogSnapshot{Models: models, UpdatedAt: time.Now()}, nil
 }
 
-// Cost estimates standard API-equivalent value at the current catalog rates,
-// not subscription billing. Each request is priced separately for context tiers.
 func (s CatalogSnapshot) Cost(model string, in, out, read, write int64) (float64, bool) {
 	rates, ok := s.Models[model]
 	fallback := !ok
@@ -130,7 +127,7 @@ func (s CatalogSnapshot) Cost(model string, in, out, read, write int64) (float64
 		if _, exists := rates[key]; !exists {
 			key = "input_cost_per_token"
 		}
-		// Some models have 128K/200K thresholds instead of 272K.
+
 		for _, tier := range []struct {
 			tokens int64
 			suffix string
@@ -142,7 +139,7 @@ func (s CatalogSnapshot) Cost(model string, in, out, read, write int64) (float64
 		if v, exists := rates[key]; exists {
 			return v
 		}
-		// Missing cache-write rates use regular input, with assumption disclosed in UI.
+
 		return rates["input_cost_per_token"]
 	}
 	return float64(in)*rate("input_cost_per_token") + float64(out)*rate("output_cost_per_token") + float64(read)*rate("cache_read_input_token_cost") + float64(write)*rate("cache_creation_input_token_cost"), fallback

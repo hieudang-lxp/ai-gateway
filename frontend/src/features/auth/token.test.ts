@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { getToken, setToken, clearToken } from "./token";
 
-// vitest node env has no localStorage — stub one
 beforeEach(() => {
   const store = new Map<string, string>();
   (globalThis as Record<string, unknown>).localStorage = {

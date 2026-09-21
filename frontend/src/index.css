@@ -43,7 +43,6 @@
   body { @apply bg-background text-foreground; }
 }
 
-/* One step larger across the app, including responsive type utilities. */
 @theme {
   --text-xs: 0.875rem;
   --text-xs--line-height: 1.25rem;

@@ -10,8 +10,6 @@ import (
 	gwsync "github.com/hieudang-lxp/ai-gateway/backend/internal/sync"
 )
 
-// The "remote" is a plain local SQLite store — same driver family as Turso
-// (libsql speaks the sqlite dialect), so SQL behavior matches.
 func pair(t *testing.T) (*store.Store, *store.Store) {
 	t.Helper()
 	local, err := store.Open(filepath.Join(t.TempDir(), "local.db"))
@@ -57,7 +55,7 @@ func TestSyncOncePushesAndAdvancesWatermark(t *testing.T) {
 	if id, _ := local.LastSyncedID(); id != 3 {
 		t.Fatalf("watermark = %d", id)
 	}
-	// budget snapshot written
+
 	dw, dh, _, _, _, _, ok, err := remote.ReadBudgetSnapshot()
 	if err != nil || !ok || dw != 10 || dh != 20 {
 		t.Fatalf("snapshot: %v %v %v %v", dw, dh, ok, err)
@@ -71,7 +69,7 @@ func TestSyncOnceIsIdempotent(t *testing.T) {
 	if _, err := s.SyncOnce(); err != nil {
 		t.Fatal(err)
 	}
-	// re-run with a reset watermark: INSERT OR IGNORE must dedupe on local_id
+
 	if err := local.SetLastSyncedID(0); err != nil {
 		t.Fatal(err)
 	}

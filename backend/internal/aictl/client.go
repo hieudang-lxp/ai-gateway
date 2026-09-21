@@ -12,8 +12,6 @@ import (
 	"time"
 )
 
-// These wire types intentionally have no database or collector dependency.
-// Prices and periods are computed by the gateway, never by the CLI.
 type Row struct {
 	Source     string  `json:"source"`
 	Model      string  `json:"model"`

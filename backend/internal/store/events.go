@@ -13,8 +13,6 @@ func (s *Store) callEvent(c Call) events.ExternalUsage {
 	return events.ExternalUsage{Source: "claude_gateway", ID: fmt.Sprintf("%s:%d", s.eventOrigin, c.ID), TS: c.TS, Model: c.Model, Usage: c.Usage, CostUSD: &cost, CostKind: "estimated"}
 }
 
-// EnableEvents backfills old proxy calls once and enables transactional outbox
-// writes for new calls. Invoke before accepting requests.
 func (s *Store) EnableEvents() error {
 	outboxSchema := eventbus.Schema
 	if s.postgres {

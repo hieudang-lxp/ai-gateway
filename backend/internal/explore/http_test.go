@@ -30,7 +30,7 @@ func TestIntervalsAndRequestValidation(t *testing.T) {
 
 func TestIntervalsUseLocalDayAndMonthAtUTCBoundary(t *testing.T) {
 	location := time.FixedZone("Asia/Ho_Chi_Minh", 7*60*60)
-	// Local October has begun while UTC is still in September.
+
 	now := time.Date(2026, 10, 1, 1, 30, 0, 0, location)
 	for _, query := range []string{"period=month", "days=1"} {
 		got, err := interval(httptest.NewRequest("GET", "/_sessions?"+query, nil), now)

@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-// ImportSQLite is an explicit, read-only migration boundary, never a runtime
-// cross-service database dependency. Existing identities make reruns safe.
 func (s *Store) ImportSQLite(path string) (int, error) {
 	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
 	if err != nil {

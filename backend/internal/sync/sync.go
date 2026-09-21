@@ -1,6 +1,3 @@
-// Package sync pushes local call rows to the Turso replica. Strictly
-// fail-open: any error is logged and retried next tick; the proxy never
-// depends on it.
 package sync
 
 import (
@@ -16,12 +13,10 @@ type Syncer struct {
 	Local    *store.Store
 	Remote   *store.Store
 	Limits   func() control.BudgetConfig
-	Interval time.Duration // default 60s
-	Batch    int           // default 500
+	Interval time.Duration
+	Batch    int
 }
 
-// SyncOnce pushes at most Batch rows past the watermark, then refreshes the
-// budget snapshot. Returns how many rows were pushed.
 func (s *Syncer) SyncOnce() (int, error) {
 	batch := s.Batch
 	if batch <= 0 {
@@ -56,7 +51,6 @@ func (s *Syncer) SyncOnce() (int, error) {
 	return len(calls), nil
 }
 
-// Run loops until ctx is done. Errors are logged, never fatal.
 func (s *Syncer) Run(ctx context.Context) {
 	interval := s.Interval
 	if interval <= 0 {

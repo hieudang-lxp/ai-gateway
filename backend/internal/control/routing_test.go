@@ -5,7 +5,7 @@ import "testing"
 func TestRoute(t *testing.T) {
 	r := RoutingConfig{
 		Rules: []Rule{
-			{Match: "claude-opus-4-8", To: "claude-haiku-4-5-20251001"}, // exact, first
+			{Match: "claude-opus-4-8", To: "claude-haiku-4-5-20251001"},
 			{Match: "claude-opus-*", To: "claude-sonnet-5"},
 		},
 		Block: []string{"claude-fable-*"},
@@ -14,10 +14,10 @@ func TestRoute(t *testing.T) {
 		in, want string
 		blocked  bool
 	}{
-		{"claude-fable-5", "", true},                            // block wins
-		{"claude-opus-4-8", "claude-haiku-4-5-20251001", false}, // first match wins
-		{"claude-opus-4-7", "claude-sonnet-5", false},           // glob
-		{"claude-sonnet-5", "claude-sonnet-5", false},           // passthrough
+		{"claude-fable-5", "", true},
+		{"claude-opus-4-8", "claude-haiku-4-5-20251001", false},
+		{"claude-opus-4-7", "claude-sonnet-5", false},
+		{"claude-sonnet-5", "claude-sonnet-5", false},
 	}
 	for _, c := range cases {
 		to, blocked := r.Route(c.in)

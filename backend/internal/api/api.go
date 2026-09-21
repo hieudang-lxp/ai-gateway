@@ -1,5 +1,3 @@
-// Package api serves the dashboard's Connect RPC StatsService over a Store —
-// the local one in `gateway serve`, the Turso replica in `gateway api`.
 package api
 
 import (
@@ -21,8 +19,6 @@ type server struct {
 	limits func() control.BudgetConfig
 }
 
-// New returns an http.Handler serving StatsService. token == "" disables auth
-// (local use); otherwise requests need "Authorization: Bearer <token>".
 func New(st *store.Store, limits func() control.BudgetConfig, token string) http.Handler {
 	s := &server{st: st, limits: limits}
 	mux := http.NewServeMux()

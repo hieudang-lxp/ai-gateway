@@ -15,8 +15,8 @@ message OverviewRequest {}
 
 message BudgetWindow {
   double spent_usd = 1;
-  double warn_usd = 2; // 0 = disabled
-  double hard_usd = 3; // 0 = disabled
+  double warn_usd = 2;
+  double hard_usd = 3;
 }
 
 message OverviewResponse {
@@ -29,11 +29,11 @@ message OverviewResponse {
 }
 
 message SpendSeriesRequest {
-  int32 days = 1; // <=0 -> 30
+  int32 days = 1;
 }
 
 message SpendPoint {
-  string date = 1; // YYYY-MM-DD in Asia/Ho_Chi_Minh
+  string date = 1;
   double cost_usd = 2;
   int64 calls = 3;
 }
@@ -43,7 +43,7 @@ message SpendSeriesResponse {
 }
 
 message ModelBreakdownRequest {
-  int32 days = 1; // <=0 -> 30
+  int32 days = 1;
 }
 
 message ModelRow {
@@ -61,8 +61,8 @@ message ModelBreakdownResponse {
 }
 
 message RecentCallsRequest {
-  int32 limit = 1;     // <=0 -> 50, max 200
-  int64 before_id = 2; // pagination cursor; 0 = latest
+  int32 limit = 1;
+  int64 before_id = 2;
 }
 
 message Call {
@@ -82,7 +82,7 @@ message Call {
   string request_id = 14;
   string request_model = 15;
   string request_path = 16;
-  string model_source = 17; // response, request, cache; empty for old records
+  string model_source = 17;
   string upstream_request_id = 18;
 }
 

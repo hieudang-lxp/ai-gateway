@@ -131,8 +131,6 @@ func Connect(url string) (*nats.Conn, nats.JetStreamContext, error) {
 	return nc, js, nil
 }
 
-// Pump removes a message only after JetStream confirms persistent storage.
-// A crash between publish and delete results in safe redelivery of the same ID.
 func (o *Outbox) Pump(ctx context.Context, url string) {
 	for ctx.Err() == nil {
 		nc, js, err := Connect(url)

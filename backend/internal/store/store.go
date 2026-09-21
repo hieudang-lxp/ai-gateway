@@ -12,10 +12,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Usage is the token counts extracted from one Anthropic response.
 type Usage = events.Usage
 
-// Record is one persisted call.
 type Record struct {
 	RequestID         string
 	RequestModel      string
@@ -33,7 +31,6 @@ type Record struct {
 	SavedUSD          float64
 }
 
-// Store owns gateway calls, cache and the transactional event outbox.
 type Store struct {
 	db          *sql.DB
 	eventOrigin string
@@ -44,14 +41,11 @@ func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	// WAL + busy_timeout keep concurrent stream finalizations from tripping
-	// "database is locked"; a single open connection serializes writes.
+
 	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", path)
 	return OpenDSN("sqlite", dsn)
 }
 
-// OpenDSN opens any database/sql driver speaking the sqlite dialect (local
-// "sqlite", remote "libsql" for Turso) and ensures the base schema.
 func OpenDSN(driver, dsn string) (*Store, error) {
 	db, err := sql.Open(driver, dsn)
 	if err != nil {
@@ -66,7 +60,7 @@ func OpenDSN(driver, dsn string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	// Migrate pre-existing DBs; "duplicate column" errors are expected and ignored.
+
 	for _, ddl := range []string{
 		`ALTER TABLE calls ADD COLUMN request_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE calls ADD COLUMN request_model TEXT NOT NULL DEFAULT ''`,
@@ -117,8 +111,7 @@ func (s *Store) Insert(r Record) error {
 	}
 	defer tx.Rollback()
 	if s.postgres {
-		// Allocate IDs in commit order for the legacy ID-based sync cursor.
-		// PostgreSQL sequences alone allow a later ID to commit first.
+
 		if _, err = tx.Exec(`SELECT pg_advisory_xact_lock(824782)`); err != nil {
 			return err
 		}
@@ -157,7 +150,6 @@ func boolToInt(b bool) int {
 
 func (s *Store) Close() error { return s.db.Close() }
 
-// StatRow is one model's aggregate over a time window.
 type StatRow struct {
 	Model      string
 	Calls      int64
@@ -168,8 +160,6 @@ type StatRow struct {
 	CostUSD    float64
 }
 
-// StatsSince returns per-model aggregates for calls at or after the cutoff,
-// ordered by cost descending.
 func (s *Store) StatsSince(cutoff time.Time) ([]StatRow, error) {
 	rows, err := s.db.Query(
 		`SELECT model, COUNT(*), SUM(input_tokens), SUM(output_tokens),
@@ -194,7 +184,6 @@ func (s *Store) StatsSince(cutoff time.Time) ([]StatRow, error) {
 	return out, rows.Err()
 }
 
-// SpendSince returns total estimated cost of calls at or after the cutoff.
 func (s *Store) SpendSince(cutoff time.Time) (float64, error) {
 	var v float64
 	err := s.db.QueryRow(
@@ -204,7 +193,6 @@ func (s *Store) SpendSince(cutoff time.Time) (float64, error) {
 	return v, err
 }
 
-// CachedResponse is one stored upstream response, replayable byte-for-byte.
 type CachedResponse struct {
 	Status      int
 	ContentType string
@@ -229,8 +217,6 @@ func (s *Store) CachePut(key string, c CachedResponse) error {
 	return err
 }
 
-// CacheGet returns the entry if it exists and is younger than maxAge.
-// Stale entries are deleted lazily.
 func (s *Store) CacheGet(key string, maxAge time.Duration) (*CachedResponse, bool, error) {
 	var c CachedResponse
 	var created int64
@@ -250,7 +236,6 @@ func (s *Store) CacheGet(key string, maxAge time.Duration) (*CachedResponse, boo
 	return &c, true, nil
 }
 
-// CacheSavings returns how many cache hits were served and the total USD saved.
 func (s *Store) CacheSavings() (hits int64, saved float64, err error) {
 	err = s.db.QueryRow(
 		`SELECT COUNT(*), COALESCE(SUM(saved_usd), 0) FROM calls WHERE cache_hit = 1`,
@@ -258,8 +243,6 @@ func (s *Store) CacheSavings() (hits int64, saved float64, err error) {
 	return
 }
 
-// EnsureSyncSchema prepares a REMOTE store: dedupe column on calls plus the
-// budget snapshot table the cloud API reads limits from.
 func (s *Store) EnsureSyncSchema() error {
 	_, _ = s.db.Exec(`ALTER TABLE calls ADD COLUMN local_id INTEGER`)
 	if _, err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_calls_local_id ON calls(local_id)`); err != nil {
@@ -275,7 +258,6 @@ func (s *Store) EnsureSyncSchema() error {
 	return err
 }
 
-// InsertSynced writes one local row into a remote store, deduped on local_id.
 func (s *Store) InsertSynced(c Call) error {
 	_, err := s.db.Exec(
 		`INSERT INTO calls

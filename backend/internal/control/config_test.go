@@ -68,14 +68,14 @@ func TestWatcherMissingFileIsZeroConfig(t *testing.T) {
 func TestWatcherReloadsOnChange(t *testing.T) {
 	p := writeCfg(t, "cache:\n  enabled: false\n")
 	w := NewWatcher(p)
-	w.recheck = 0 // test hook: re-stat every call
+	w.recheck = 0
 	if w.Current().Cache.Enabled {
 		t.Fatal("want disabled")
 	}
 	if err := os.WriteFile(p, []byte("cache:\n  enabled: true\n  ttl: 5m\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// mtime granularity can be 1s on some filesystems; force it
+
 	future := time.Now().Add(2 * time.Second)
 	if err := os.Chtimes(p, future, future); err != nil {
 		t.Fatal(err)

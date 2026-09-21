@@ -2,6 +2,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { apiBaseURL } from "../../lib/transport";
 import { periodParams, sessionParams } from "./query";
 import type { InsightsResponse, SessionDetail, SessionFilters, SessionsResponse } from "./types";
+import type { ModelOption } from "./models";
 async function request<T>(path: string, params: URLSearchParams, signal: AbortSignal): Promise<T> {
   const url = new URL(path, apiBaseURL); url.search = params.toString();
   const response = await fetch(url, { signal, cache: "no-store" });
@@ -23,4 +24,8 @@ export function useSessionDetail(source: string, sessionID: string) {
 }
 export function useInsights(period: string) {
   return useQuery({ queryKey: ["insights", period], queryFn: ({ signal }) => request<InsightsResponse>("/_insights", periodParams(period), signal), staleTime: 30_000, refetchInterval: 60_000, retry: 1 });
+}
+
+export function useSessionModels() {
+  return useQuery({ queryKey: ["session-models"], queryFn: ({ signal }) => request<{ models: ModelOption[] }>("/_sessions/models", new URLSearchParams(), signal), staleTime: 30_000, refetchInterval: 60_000, retry: 1 });
 }

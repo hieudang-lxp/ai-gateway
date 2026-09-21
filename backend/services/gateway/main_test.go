@@ -16,8 +16,6 @@ import (
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/store"
 )
 
-// TestAPIOverLocalDB exercises the api-role wiring (store -> snapshot limits
-// -> Connect handler) against a local db, mirroring `gateway api -db`.
 func TestAPIOverLocalDB(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
 	if err != nil {

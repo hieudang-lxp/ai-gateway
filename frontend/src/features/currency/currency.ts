@@ -38,7 +38,6 @@ export function loadCachedRate(): { rate: number; ts: number } | null {
     const v = JSON.parse(raw);
     if (typeof v?.rate === "number" && typeof v?.ts === "number") return v;
   } catch {
-    // corrupt cache — ignore
   }
   return null;
 }

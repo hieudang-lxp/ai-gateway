@@ -133,7 +133,7 @@ func runServe(args []string) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/_stats", g.HandleStats)
-	// CORS so the dashboard dev server (any localhost port) can call the local API.
+
 	rpcCORS := cors.New(cors.Options{
 		AllowOriginFunc: func(origin string) bool {
 			return strings.HasPrefix(origin, "http://localhost:") ||
@@ -247,7 +247,7 @@ func runAPI(args []string) {
 
 	handler := api.New(st, limits, os.Getenv("DASHBOARD_TOKEN"))
 
-	origin := os.Getenv("CORS_ORIGIN") // e.g. https://<site>.netlify.app
+	origin := os.Getenv("CORS_ORIGIN")
 	allowed := []string{"http://localhost:5173"}
 	if origin != "" {
 		allowed = append(allowed, origin)
@@ -264,7 +264,7 @@ func runAPI(args []string) {
 	}
 	addr := ":" + port
 	log.Printf("gateway api listening on %s", addr)
-	// h2c so plain-gRPC clients work over cleartext; browsers use Connect/JSON.
+
 	h := h2c.NewHandler(c.Handler(handler), &http2.Server{})
 	srv := &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 30 * time.Second}
 	if err := srv.ListenAndServe(); err != nil {

@@ -9,7 +9,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-// OpenPostgres opens the gateway's own database, independent of the usage ledger.
 func OpenPostgres(dsn string) (*Store, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {

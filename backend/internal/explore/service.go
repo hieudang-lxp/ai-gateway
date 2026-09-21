@@ -14,7 +14,6 @@ import (
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/pricing"
 )
 
-// Run starts one service with its own DSN, durable consumer and price cache.
 func Run(name, defaultAddr, durable string, sessions bool) {
 	addr := flag.String("addr", defaultAddr, "internal HTTP address")
 	dsn := flag.String("database-url", os.Getenv("DATABASE_URL"), "service PostgreSQL DSN")

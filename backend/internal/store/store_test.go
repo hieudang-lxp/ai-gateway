@@ -25,7 +25,7 @@ func TestSpendSince(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := st.SpendSince(base.Add(-90 * time.Minute)) // includes cost 1.5 (now) and 2.5 (-1h)
+	got, err := st.SpendSince(base.Add(-90 * time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}

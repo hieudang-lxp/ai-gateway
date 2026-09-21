@@ -18,8 +18,6 @@ type BudgetStatus struct {
 	Reason  string
 }
 
-// vnLoc is the timezone budget periods are anchored to. LoadLocation needs
-// tzdata: present on macOS/Linux; the Docker image installs the tzdata pkg.
 var vnLoc = func() *time.Location {
 	loc, err := time.LoadLocation("Asia/Ho_Chi_Minh")
 	if err != nil {
@@ -28,8 +26,6 @@ var vnLoc = func() *time.Location {
 	return loc
 }()
 
-// EvaluateBudget compares spends against limits. A zero limit is disabled.
-// Hard anywhere → Block; otherwise Warn anywhere → Warn.
 func EvaluateBudget(cfg BudgetConfig, day, week, month float64) BudgetStatus {
 	type check struct {
 		name  string
@@ -57,12 +53,10 @@ func EvaluateBudget(cfg BudgetConfig, day, week, month float64) BudgetStatus {
 	return BudgetStatus{VerdictOK, ""}
 }
 
-// PeriodStarts returns the calendar day/Mon-week/month starts containing now,
-// in Asia/Ho_Chi_Minh.
 func PeriodStarts(now time.Time) (day, week, month time.Time) {
 	n := now.In(vnLoc)
 	day = time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, vnLoc)
-	week = day.AddDate(0, 0, -((int(n.Weekday()) + 6) % 7)) // Monday start
+	week = day.AddDate(0, 0, -((int(n.Weekday()) + 6) % 7))
 	month = time.Date(n.Year(), n.Month(), 1, 0, 0, 0, 0, vnLoc)
 	return
 }

@@ -7,7 +7,6 @@ import type { BudgetWindow } from "../../gen/gateway/v1/stats_pb";
 import { barState } from "./budget";
 import { useCurrency } from "../currency/useCurrency";
 
-// validated status colors: ok #0369a1 · warn #d97706 · over #dc2626
 const FILL = {
   ok: "bg-sky-700",
   warn: "bg-amber-600",

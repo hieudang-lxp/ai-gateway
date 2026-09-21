@@ -26,8 +26,7 @@ func seededStore(t *testing.T) *store.Store {
 	now := time.Now()
 	rows := []store.Record{
 		{TS: now, Model: "claude-sonnet-5", Usage: store.Usage{Input: 100, Output: 50}, CostUSD: 1.0, LatencyMS: 800, Status: 200},
-		// -1min not -1h: near midnight Asia/Ho_Chi_Minh a -1h row would fall
-		// into yesterday and flake the "today spent" assertion.
+
 		{TS: now.Add(-time.Minute), Model: "claude-opus-4-8", Usage: store.Usage{Input: 10, Output: 5}, CostUSD: 2.0, LatencyMS: 900, Status: 200, RoutedFrom: "claude-fable-5"},
 		{TS: now.Add(-25 * time.Hour), Model: "claude-sonnet-5", CostUSD: 4.0, Status: 200},
 		{TS: now, Model: "claude-sonnet-5", CostUSD: 0, Status: 200, CacheHit: true, SavedUSD: 0.5},
@@ -58,7 +57,7 @@ func TestOverview(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := resp.Msg
-	if m.Today.SpentUsd != 3.0 { // 1.0 + 2.0 today (cache hit row costs 0)
+	if m.Today.SpentUsd != 3.0 {
 		t.Fatalf("today spent = %v want 3.0", m.Today.SpentUsd)
 	}
 	if m.Today.WarnUsd != 10 || m.Today.HardUsd != 20 {
@@ -85,14 +84,14 @@ func TestSpendSeriesAndBreakdown(t *testing.T) {
 			t.Fatalf("bad date %q", p.Date)
 		}
 	}
-	if total != 7.0 { // 1+2+4 within 7 days
+	if total != 7.0 {
 		t.Fatalf("series total = %v want 7.0", total)
 	}
 	b, err := c.ModelBreakdown(context.Background(), connect.NewRequest(&gatewayv1.ModelBreakdownRequest{Days: 7}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(b.Msg.Rows) != 2 { // sonnet + opus
+	if len(b.Msg.Rows) != 2 {
 		t.Fatalf("rows = %d", len(b.Msg.Rows))
 	}
 }
@@ -122,14 +121,12 @@ func TestAuthRequired(t *testing.T) {
 	srv := httptest.NewServer(api.New(st, limits, "s3cret"))
 	defer srv.Close()
 
-	// no token → Unauthenticated
 	c := gatewayv1connect.NewStatsServiceClient(srv.Client(), srv.URL)
 	_, err := c.Overview(context.Background(), connect.NewRequest(&gatewayv1.OverviewRequest{}))
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("want Unauthenticated, got %v", err)
 	}
 
-	// correct token → OK
 	req := connect.NewRequest(&gatewayv1.OverviewRequest{})
 	req.Header().Set("Authorization", "Bearer s3cret")
 	if _, err := c.Overview(context.Background(), req); err != nil {

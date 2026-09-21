@@ -19,7 +19,6 @@ type ctxKey int
 
 const infoKey ctxKey = 0
 
-// reqInfo travels with a request from dispatch through to finalize.
 type reqInfo struct {
 	requestID         string
 	requestModel      string
@@ -27,11 +26,10 @@ type reqInfo struct {
 	upstreamRequestID string
 	model             string
 	start             time.Time
-	routedFrom        string // original model if rewritten, else ""
-	cacheKey          string // non-empty → capture & store the response on success
+	routedFrom        string
+	cacheKey          string
 }
 
-// Gateway is the reverse proxy plus the store it logs to.
 type Gateway struct {
 	proxy   *httputil.ReverseProxy
 	store   *store.Store
@@ -51,13 +49,11 @@ func New(upstream string, st *store.Store, pr pricing.Pricing, ctl *control.Watc
 			req.URL.Scheme = target.Scheme
 			req.URL.Host = target.Host
 			req.Host = target.Host
-			// Force identity encoding so the tee'd copy is plaintext and usage
-			// extraction works. On localhost the lost compression is irrelevant.
+
 			req.Header.Del("Accept-Encoding")
 		},
 		ModifyResponse: g.modifyResponse,
-		// Fail-open: on any transport error, log and hand the client a 502-ish
-		// error rather than a silent hang. We never mutate the client's key.
+
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Printf("proxy error: %v", err)
 			w.WriteHeader(http.StatusBadGateway)
@@ -65,7 +61,7 @@ func New(upstream string, st *store.Store, pr pricing.Pricing, ctl *control.Watc
 				g.finalize(newParser(false), http.StatusBadGateway, "", info, nil)
 			}
 		},
-		FlushInterval: -1, // flush immediately for SSE streaming
+		FlushInterval: -1,
 	}
 	g.proxy = proxy
 	return g, nil
@@ -88,13 +84,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-// modifyResponse wraps the response body so usage is extracted as it streams to
-// the client. It must never return an error: doing so makes ReverseProxy send
-// the client a 502. Any logging-setup problem is swallowed.
 func (g *Gateway) modifyResponse(resp *http.Response) error {
 	info, _ := resp.Request.Context().Value(infoKey).(*reqInfo)
 	if info == nil {
-		return nil // discovery/count_tokens are not billable message requests
+		return nil
 	}
 	info.upstreamRequestID = resp.Header.Get("request-id")
 	if info.upstreamRequestID == "" {
@@ -116,9 +109,6 @@ func (g *Gateway) modifyResponse(resp *http.Response) error {
 	return nil
 }
 
-// finalize computes cost and writes the row. Runs on Body.Close(), after the
-// client already has every byte — so a synchronous SQLite write adds no
-// client-visible latency. Store failures log to stderr and never propagate.
 func (g *Gateway) finalize(p *parser, status int, contentType string, info *reqInfo, captured *bytes.Buffer) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -137,8 +127,7 @@ func (g *Gateway) finalize(p *parser, status int, contentType string, info *reqI
 		return
 	}
 	cost := g.pricing.Cost(model, p.u.Input, p.u.Output, p.u.CacheRead, p.u.CacheWrite)
-	// CachePut BEFORE Insert: once the calls row is visible, the cache entry
-	// must already exist (tests use the row as the "finalize done" signal).
+
 	if captured != nil && status == http.StatusOK {
 		err := g.store.CachePut(info.cacheKey, store.CachedResponse{
 			Status: status, ContentType: contentType,
@@ -159,16 +148,10 @@ func (g *Gateway) finalize(p *parser, status int, contentType string, info *reqI
 	}
 }
 
-// usageTap wraps a response body, feeding a copy of every byte to a parser and
-// firing onClose exactly once when the body is closed.
-//
-// We roll our own instead of io.TeeReader because TeeReader surfaces the
-// parser's write path as a read error — a fail-open violation. Here the client
-// read path is fully independent of the parser.
 type usageTap struct {
 	rc      io.ReadCloser
 	parser  *parser
-	capture *bytes.Buffer // non-nil → also buffer bytes for cache storage
+	capture *bytes.Buffer
 	onClose func()
 	closed  bool
 }
@@ -176,7 +159,7 @@ type usageTap struct {
 func (t *usageTap) Read(p []byte) (int, error) {
 	n, err := t.rc.Read(p)
 	if n > 0 {
-		t.parser.feed(p[:n]) // cheap + recover-guarded; never errors
+		t.parser.feed(p[:n])
 		if t.capture != nil {
 			t.capture.Write(p[:n])
 		}

@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// HandleStats returns per-window, per-model aggregates as JSON.
 func (g *Gateway) HandleStats(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())

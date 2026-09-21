@@ -22,7 +22,7 @@ describe("formatMoney", () => {
   });
   it("converts to VND with vi-VN grouping, no decimals", () => {
     const s = formatMoney(2, "VND", 25000);
-    expect(s).toContain("50.000"); // vi-VN groups with dots
+    expect(s).toContain("50.000");
     expect(s).toContain("₫");
   });
   it("falls back to USD when VND has no rate", () => {

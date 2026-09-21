@@ -11,7 +11,6 @@ import {
 import { StatsService } from "../../gen/gateway/v1/stats_pb";
 import { useCurrency } from "../currency/useCurrency";
 
-// single-series mark: #0369a1 (validated vs white surface)
 const OCEAN = "#0369a1";
 
 export function SpendChart() {

@@ -141,8 +141,7 @@ func (s *Session) add(r record, p pricing.CatalogSnapshot) {
 	s.Calls++
 	s.StartedAt = min(s.StartedAt, r.ts)
 	s.LastAt = max(s.LastAt, r.ts)
-	// Each nonempty field has its own revision. A newer untitled child record
-	// must not hide the latest title on another record in this session.
+
 	if r.title != "" && (s.Title == "" || newerField(r.revision, r.ts, r.title, s.titleRevision, s.titleTS, s.Title)) {
 		s.Title, s.titleRevision, s.titleTS = r.title, r.revision, r.ts
 	}
@@ -183,8 +182,7 @@ func (s *Session) add(r record, p pricing.CatalogSnapshot) {
 }
 
 func newerField(revision, ts int64, value string, oldRevision, oldTS int64, oldValue string) bool {
-	// Lexical tie-breaking makes equally dated conflicting metadata independent
-	// of the database's row order when no more precise revision is available.
+
 	return revision > oldRevision || revision == oldRevision && (ts > oldTS || ts == oldTS && value > oldValue)
 }
 func indexedAt(ctx context.Context, tx *sql.Tx) (string, error) {

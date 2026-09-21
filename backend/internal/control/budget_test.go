@@ -47,19 +47,19 @@ func TestPeriodStarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Friday 2026-08-28 10:30 +07
+
 	now := time.Date(2026, 8, 28, 10, 30, 0, 0, loc)
 	day, week, month := PeriodStarts(now)
 	if !day.Equal(time.Date(2026, 8, 28, 0, 0, 0, 0, loc)) {
 		t.Fatalf("day = %v", day)
 	}
-	if !week.Equal(time.Date(2026, 8, 24, 0, 0, 0, 0, loc)) { // Monday
+	if !week.Equal(time.Date(2026, 8, 24, 0, 0, 0, 0, loc)) {
 		t.Fatalf("week = %v", week)
 	}
 	if !month.Equal(time.Date(2026, 8, 1, 0, 0, 0, 0, loc)) {
 		t.Fatalf("month = %v", month)
 	}
-	// Sunday must belong to the week started the previous Monday
+
 	sun := time.Date(2026, 8, 30, 23, 0, 0, 0, loc)
 	_, week2, _ := PeriodStarts(sun)
 	if !week2.Equal(time.Date(2026, 8, 24, 0, 0, 0, 0, loc)) {

@@ -1,4 +1,3 @@
-// Package migration copies offline SQLite snapshots into empty service databases.
 package migration
 
 import (
@@ -30,9 +29,6 @@ var gatewayTables = []table{
 }
 var identifier = regexp.MustCompile(`^[a-z_][a-z_0-9]*$`)
 
-// SQLite requires a completed backup (no live WAL), initialized destination
-// schema, and stopped writers. Copy and row-by-row checksum verification commit
-// together. Reruns of the identical snapshot are no-ops even after services resume.
 func SQLite(ctx context.Context, source, dsn, kind string) (map[string]TableResult, error) {
 	tables := gatewayTables
 	if kind == "collector" {
@@ -73,7 +69,7 @@ func SQLite(ctx context.Context, source, dsn, kind string) (map[string]TableResu
 	if err != nil && err != sql.ErrNoRows {
 		return nil, err
 	}
-	// Reject unrecognized application tables instead of silently leaving data behind.
+
 	names, err := src.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
 	if err != nil {
 		return nil, err
@@ -231,8 +227,7 @@ func SQLite(ctx context.Context, source, dsn, kind string) (map[string]TableResu
 		if col == "" {
 			continue
 		}
-		// Preserve SQLite's high-water mark even when rows were deleted (outboxes
-		// usually drain to zero). Never reuse IDs below retained sync checkpoints.
+
 		if _, err = tx.ExecContext(ctx, `SELECT setval(pg_get_serial_sequence($1,$2),GREATEST(COALESCE(MAX(`+col+`),0),$3::bigint,1),COUNT(*)>0 OR $3::bigint>0) FROM `+t.name, t.name, col, report[t.name].Sequence); err != nil {
 			return nil, err
 		}

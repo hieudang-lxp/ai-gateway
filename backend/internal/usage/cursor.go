@@ -23,8 +23,6 @@ type CursorCredentials struct {
 	UserID       int
 }
 
-// Read on every poll so the IDE remains responsible for refreshing its own
-// session. Only three explicitly allowed keys are read. Never read browser cookies.
 func ReadCursorCredentials(path string) (CursorCredentials, error) {
 	var out CursorCredentials
 	uri := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro&_pragma=busy_timeout(5000)"}
@@ -75,8 +73,6 @@ func NewCursorClient() *CursorClient {
 	}
 }
 
-// This is the same Connect RPC endpoint/schema shipped by the Cursor desktop
-// app. It is version-sensitive; errors are surfaced instead of reported as zero.
 func (c *CursorClient) Fetch(ctx context.Context, creds CursorCredentials, start, end time.Time) ([]store.ExternalUsage, error) {
 	if creds.UserID == 0 {
 		body, _ := json.Marshal(map[string]int{"teamId": creds.TeamID})

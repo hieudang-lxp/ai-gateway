@@ -132,8 +132,12 @@ not stored in the ledger or logs. API credentials are never baked into the image
 
 Sessions searches recorded titles, workspace paths, models and session IDs.
 Search matches full-text words or a case-insensitive **session-ID prefix**, not
-arbitrary substrings. Source and exact model filters combine with the shared
-period. Lists use cursor pagination; opening a session shows its full retained
+arbitrary substrings. Source and model filters combine with the shared
+period. The searchable model dropdown uses distinct source/model pairs from
+`/_sessions/models` across retained DB history, independent of list pagination.
+Changing source keeps a compatible selection or resets it to **All models**;
+choosing a model applies the filter immediately. The model list refreshes every
+minute and through **Refresh**. Lists use cursor pagination; opening a session shows its full retained
 history, with a paginated request timeline and explicit pricing labels.
 Deep links use `#sessions?source=codex&session_id=<id>`.
 
@@ -146,11 +150,21 @@ into sessions. Events without metadata are counted as unattributed. Neither
 search nor timelines index prompts or replies. No titles are inferred from them.
 
 Insights compares the selected period with the immediately preceding interval
-of equal elapsed length. It ranks sessions by known usage value, flags low
-observed cache reuse (at least five events, 50K input-context tokens, under 10%
-cache reads), and links requests with at least 100K input-context tokens back to
-their session. These are observations, not promised savings. Comparisons depend
-on retained history, and current API estimates are not subscription charges.
+of equal elapsed length and ranks sessions by known usage value. Its Three.js
+3D usage network connects all usage → sources → models. Cost / Tokens / Events
+controls change model node sizing; drag to orbit, scroll or pinch to zoom, and
+select a node (or use the accessible selector) for exact values. **View all** opens
+`#insights?view=network`, a full-width explorer with all recorded models and
+Perspective / Front / Side / Above camera presets. Back returns to Insights;
+the selected period is shared across both views. The five largest
+models per source are shown individually and the remainder is explicitly grouped,
+without dropping usage. The network is a visualization of recorded relationships,
+not a trained neural network; moving particles do not indicate live requests.
+Motion can be paused and respects reduced-motion preferences. If WebGL is
+unavailable, the selector and detail panel still expose all graph values.
+The `network` and retained `daily` aggregates use the same per-request pricing as
+headline totals; unpriced events remain labelled. Current API estimates are not
+subscription charges. The API retains its legacy `findings` field for compatibility.
 
 Each projection commits before acknowledging JetStream, using independent
 durables `sessions-index-v1` and `insights-index-v1`; the usage ledger retains

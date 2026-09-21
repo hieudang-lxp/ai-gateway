@@ -26,7 +26,6 @@ export function useExchangeRate(): {
           setState(next);
         }
       } catch {
-        // network down — keep last-good rate
       }
     }
     const cached = loadCachedRate();

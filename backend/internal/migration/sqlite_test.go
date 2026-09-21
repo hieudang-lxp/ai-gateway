@@ -180,7 +180,7 @@ func TestSQLiteMigrationPreservesHistoryAndAllowsExactReplay(t *testing.T) {
 	if err = db.QueryRow(`SELECT MAX(seq) FROM event_outbox`).Scan(&seq); err != nil || seq <= 199 {
 		t.Fatalf("outbox sequence=%d err=%v", seq, err)
 	}
-	// A sent event and newly written call must stay untouched on an exact retry.
+
 	execSQL(t, db, `DELETE FROM event_outbox WHERE seq=73`)
 	repeated, err := migration.SQLite(context.Background(), path, dsn, "gateway")
 	if err != nil || !reflect.DeepEqual(report, repeated) {

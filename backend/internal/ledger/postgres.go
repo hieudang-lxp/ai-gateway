@@ -1,4 +1,3 @@
-// Package ledger owns the usage service database. Other services never query it.
 package ledger
 
 import (
@@ -114,7 +113,6 @@ func (s *Store) Apply(e events.Envelope) error {
 	return tx.Commit()
 }
 
-// Keep only a fingerprint and safe reason, never malformed message content.
 func (s *Store) Quarantine(hash, subject, reason string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -153,7 +151,6 @@ func (s *Store) Statuses() (map[string]events.SourceStatus, error) {
 	return out, rows.Err()
 }
 
-// One SELECT gives a consistent snapshot; pricing is applied per request.
 func (s *Store) PricedUsageSince(cutoff time.Time, cost func(string, int64, int64, int64, int64) (float64, bool)) ([]store.UsageRow, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()

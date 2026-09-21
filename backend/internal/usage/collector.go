@@ -197,8 +197,7 @@ func (c *Collector) CollectLocal() {
 					return nil
 				}
 				for i := range rows {
-					// A fresh observation can correct equal-token snapshots or prices
-					// after restart even when the source file itself is unchanged.
+
 					rows[i].SessionUpdatedAt = time.Now()
 					if name, ok := names[rows[i].SessionID]; ok && name.Name != "" {
 						rows[i].SessionTitle = name.Name

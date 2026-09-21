@@ -71,7 +71,7 @@ func TestReplayAliasAndAtomicRollback(t *testing.T) {
 	}
 	row.ID = "legacy"
 	row.Aliases = nil
-	send(row) // old replay must not resurrect alias
+	send(row)
 	cost := func(string, int64, int64, int64, int64) (float64, bool) { return .25, false }
 	got, err := s.PricedUsageSince(time.Unix(0, 0), cost)
 	if err != nil {

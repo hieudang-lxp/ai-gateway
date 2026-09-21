@@ -26,7 +26,7 @@ export function syncStatus(sources: Record<string, SourceStatus> | undefined, fa
   return {
     label: ready === 3 ? "All collectors synced" : `${ready}/3 collectors ready`,
     healthy: ready === 3,
-    // This is the latest time through which every collector has synced.
+
     lastSync: dates.every(Number.isFinite) ? new Date(Math.min(...dates)).toISOString() : null,
   };
 }

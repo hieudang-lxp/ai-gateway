@@ -1,6 +1,3 @@
-// Package control holds the gateway's control plane: config, budget
-// decisions, model routing and cache keying. Everything here is pure and
-// fail-open: a broken config never breaks the proxy.
 package control
 
 import (
@@ -65,8 +62,6 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// Watcher hands out the current config, re-reading the file when its mtime
-// changes. Stat is rate-limited to once per recheck interval.
 type Watcher struct {
 	path    string
 	recheck time.Duration
@@ -83,8 +78,6 @@ func NewWatcher(path string) *Watcher {
 	return w
 }
 
-// Current returns the latest config; never nil. Missing file → zero config.
-// Parse errors keep the previous config (fail-open).
 func (w *Watcher) Current() *Config {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -100,7 +93,7 @@ func (w *Watcher) reloadLocked() {
 	w.statted = time.Now()
 	fi, err := os.Stat(w.path)
 	if err != nil {
-		return // missing file: keep whatever we have (zero config at start)
+		return
 	}
 	if fi.ModTime().Equal(w.mtime) {
 		return
@@ -108,7 +101,7 @@ func (w *Watcher) reloadLocked() {
 	cfg, err := LoadConfig(w.path)
 	if err != nil {
 		log.Printf("config reload failed, keeping previous: %v", err)
-		w.mtime = fi.ModTime() // don't re-log every recheck
+		w.mtime = fi.ModTime()
 		return
 	}
 	w.cfg = cfg

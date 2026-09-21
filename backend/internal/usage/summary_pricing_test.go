@@ -16,7 +16,7 @@ func TestSummaryPricesIndividualRequestsAndLabelsFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	// Aggregate >272K, but neither request exceeds the context threshold.
+
 	events := []store.ExternalUsage{
 		{Source: "codex", ID: "a", TS: time.Now(), Model: "gpt-6-astra", Usage: store.Usage{Input: 200000}},
 		{Source: "codex", ID: "b", TS: time.Now(), Model: "gpt-6-astra", Usage: store.Usage{Input: 200000}},

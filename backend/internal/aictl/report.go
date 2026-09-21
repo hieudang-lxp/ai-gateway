@@ -67,7 +67,6 @@ func writeUsage(w io.Writer, s Summary) error {
 	return t.Flush()
 }
 
-// Escape spreadsheet formula prefixes in model/source values from upstreams.
 func csvText(s string) string {
 	if strings.ContainsAny(strings.TrimLeft(s, " "), "\t\r\n") {
 		return "'" + s

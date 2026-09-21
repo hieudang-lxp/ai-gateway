@@ -70,8 +70,7 @@ func ParseClaude(r io.Reader, prices pricing.Pricing) ([]store.ExternalUsage, er
 		u := m.Usage
 		record := store.ExternalUsage{Source: "claude_code", ID: m.ID, TS: e.TS, Model: m.Model, Usage: store.Usage{Input: u.Input, Output: u.Output, CacheRead: u.Read, CacheWrite: u.Write}}
 		record.SessionID, record.Project = currentSession, currentProject
-		// Use configured rates only for known Claude families; never price arbitrary
-		// Codex/Cursor model names through the proxy's default fallback.
+
 		_, known := prices[m.Model]
 		for _, family := range []string{"opus", "sonnet", "haiku", "fable", "mythos"} {
 			if strings.Contains(m.Model, family) {
@@ -82,7 +81,7 @@ func ParseClaude(r io.Reader, prices pricing.Pricing) ([]store.ExternalUsage, er
 		}
 		if known {
 			cost := prices.Cost(m.Model, u.Input, u.Output, u.Read, u.Write)
-			// Anthropic 1h cache writes are 2x input, versus 1.25x for 5m.
+
 			if u.CacheCreation.OneHour > 0 {
 				cost += prices.Cost(m.Model, u.CacheCreation.OneHour, 0, 0, 0) * 0.75
 			}

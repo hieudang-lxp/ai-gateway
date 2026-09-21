@@ -22,6 +22,7 @@ func (a *API) Handler(sessions bool) http.Handler {
 	if sessions {
 		mux.HandleFunc("GET /_sessions", a.sessions)
 		mux.HandleFunc("GET /_sessions/detail", a.detail)
+		mux.HandleFunc("GET /_sessions/models", a.models)
 	} else {
 		mux.HandleFunc("GET /_insights", a.insights)
 	}
@@ -40,6 +41,19 @@ func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (a *API) models(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	models, err := a.Store.Models(ctx)
+	if err != nil {
+		queryError(w, err)
+		return
+	}
+	writeJSON(w, struct {
+		Models []ModelOption `json:"models"`
+	}{Models: models})
 }
 func interval(r *http.Request, now time.Time) (time.Time, error) {
 	days := r.URL.Query().Get("days")

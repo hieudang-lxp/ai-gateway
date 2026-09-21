@@ -16,8 +16,6 @@ func Consume(ctx context.Context, url string, apply func(events.Envelope) error,
 	ConsumeNamed(ctx, url, "usage-ledger-v1", apply, quarantine)
 }
 
-// Each service uses its own durable cursor: publishing fans out to independent
-// subscribers instead of load-balancing messages between different databases.
 func ConsumeNamed(ctx context.Context, url, durable string, apply func(events.Envelope) error, quarantine func(string, string, string) error) {
 	for ctx.Err() == nil {
 		nc, js, err := Connect(url)
@@ -40,8 +38,7 @@ func consume(ctx context.Context, js nats.JetStreamContext, apply func(events.En
 }
 
 func consumeNamed(ctx context.Context, js nats.JetStreamContext, durable string, apply func(events.Envelope) error, quarantine func(string, string, string) error) error {
-	// A single ordered consumer preserves collector batch/status order. Separate
-	// subscribers for future services get independent durable consumers.
+
 	_, err := js.AddConsumer(events.Stream, &nats.ConsumerConfig{Durable: durable, AckPolicy: nats.AckExplicitPolicy, DeliverPolicy: nats.DeliverAllPolicy, MaxAckPending: 1, AckWait: 60 * time.Second})
 	if err != nil {
 		return err
@@ -90,5 +87,5 @@ func process(payload []byte, apply func(events.Envelope) error, quarantine func(
 	if errors.Is(err, events.ErrInvalid) {
 		return quarantine(err.Error())
 	}
-	return err // database/network failures remain unacknowledged for retry
+	return err
 }

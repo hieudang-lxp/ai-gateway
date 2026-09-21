@@ -33,7 +33,6 @@ export function CacheStats() {
   });
   const { fmt } = useCurrency();
 
-  // token totals over the same 30d window as the Models table
   let input = 0n,
     output = 0n,
     cacheRd = 0n,

@@ -13,8 +13,6 @@ import (
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/store"
 )
 
-// ParseCursorCSV is also useful for reconciling automatic API collection with
-// an official export. The daemon does not require manual exports.
 func ParseCursorCSV(r io.Reader, email string) ([]store.ExternalUsage, error) {
 	reader := csv.NewReader(r)
 	header, err := reader.Read()

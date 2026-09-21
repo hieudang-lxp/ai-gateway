@@ -2,8 +2,6 @@ package store
 
 import "time"
 
-// CostEvent is a (timestamp, cost) pair for time-series bucketing done in Go
-// (keeps timezone logic out of SQL).
 type CostEvent struct {
 	TS      int64
 	CostUSD float64
@@ -27,7 +25,6 @@ func (s *Store) CostEvents(cutoff time.Time) ([]CostEvent, error) {
 	return out, rows.Err()
 }
 
-// Call is a Record with its row id, for pagination and sync.
 type Call struct {
 	ID int64
 	Record
@@ -59,7 +56,6 @@ func (s *Store) scanCalls(query string, args ...any) ([]Call, error) {
 	return out, rows.Err()
 }
 
-// RecentCalls pages newest-first. beforeID <= 0 starts from the latest row.
 func (s *Store) RecentCalls(limit int, beforeID int64) ([]Call, error) {
 	if beforeID > 0 {
 		return s.scanCalls(`SELECT `+callCols+` FROM calls WHERE id < $1 ORDER BY id DESC LIMIT $2`, beforeID, limit)
@@ -67,9 +63,6 @@ func (s *Store) RecentCalls(limit int, beforeID int64) ([]Call, error) {
 	return s.scanCalls(`SELECT `+callCols+` FROM calls ORDER BY id DESC LIMIT $1`, limit)
 }
 
-// RecentDashboardCalls hides rate-limit responses with no usage from the
-// dashboard. Filter before LIMIT so hidden rows cannot create empty pages.
-// Raw history and sync retain every response for diagnostics.
 func (s *Store) RecentDashboardCalls(limit int, beforeID int64) ([]Call, error) {
 	return s.scanCalls(`SELECT `+callCols+` FROM calls
 		WHERE (CAST($1 AS BIGINT) <= 0 OR id < $2)
@@ -78,7 +71,6 @@ func (s *Store) RecentDashboardCalls(limit int, beforeID int64) ([]Call, error) 
 		ORDER BY id DESC LIMIT $3`, beforeID, beforeID, limit)
 }
 
-// CallsAfter returns rows with id > afterID, oldest first (sync batches).
 func (s *Store) CallsAfter(afterID int64, limit int) ([]Call, error) {
 	return s.scanCalls(`SELECT `+callCols+` FROM calls WHERE id > $1 ORDER BY id ASC LIMIT $2`, afterID, limit)
 }

@@ -1,5 +1,3 @@
-// Package explore maintains independent, replayable projections for sessions and insights.
-// Each process opens only its own database; no query crosses service boundaries.
 package explore
 
 import (
@@ -85,8 +83,6 @@ func fromEvent(e events.ExternalUsage) record {
 	return r
 }
 
-// Usage snapshots increase by total tokens. Metadata carries an observation revision:
-// a late title can enrich a smaller snapshot without replacing retained usage.
 func merge(existing, incoming record) record {
 	result := existing
 	if incoming.tokens() > existing.tokens() || (incoming.tokens() == existing.tokens() && incoming.revision > existing.revision) {
@@ -110,8 +106,6 @@ func merge(existing, incoming record) record {
 	return mergeMetadata(result, incoming)
 }
 
-// Aliases retire identities. Their token snapshots may be legacy rollups, so
-// only session metadata can be recovered from them, never usage or cost.
 func mergeMetadata(result, incoming record) record {
 	newer := incoming.revision > result.revision
 	if incoming.session != "" && (result.session == "" || newer) {
@@ -137,7 +131,7 @@ func (s *Store) Apply(e events.Envelope) error {
 		return err
 	}
 	defer tx.Rollback()
-	// Serialize identity/alias updates across duplicate consumers of this database.
+
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(724619)`); err != nil {
 		return err
 	}
@@ -189,7 +183,7 @@ func (s *Store) Apply(e events.Envelope) error {
 			}
 		}
 		if loadErr == nil && current == stored {
-			continue // Replayed snapshots need no record or search-index rewrite.
+			continue
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO records(`+recordColumns+`) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
  ON CONFLICT(source,event_id) DO UPDATE SET model=excluded.model,input_tokens=excluded.input_tokens,output_tokens=excluded.output_tokens,cache_read_tokens=excluded.cache_read_tokens,cache_write_tokens=excluded.cache_write_tokens,cost_usd=excluded.cost_usd,cost_kind=excluded.cost_kind,session_id=excluded.session_id,title=excluded.title,project=excluded.project,metadata_revision=excluded.metadata_revision`, current.source, current.id, current.ts, current.model, current.in, current.out, current.read, current.write, current.cost, current.kind, current.session, current.title, current.project, current.revision)

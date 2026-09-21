@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// ExternalUsage contains accounting metadata only, never conversation content.
 type ExternalUsage = events.ExternalUsage
 
 const usageSchema = `CREATE TABLE IF NOT EXISTS external_usage (
@@ -70,9 +69,6 @@ type UsageRow struct {
 	LastTS             int64   `json:"last_ts"`
 }
 
-// Claude transcripts are the canonical source when available. Gateway calls
-// remain in their original tables for proxy budgets and diagnostics, but are
-// not added again to transcript usage.
 func (s *Store) UnifiedUsageSince(cutoff time.Time) ([]UsageRow, error) {
 	return unifiedUsageSince(s.db, cutoff)
 }
@@ -105,8 +101,6 @@ func unifiedUsageSince(db usageQuerier, cutoff time.Time) ([]UsageRow, error) {
 	return out, rows.Err()
 }
 
-// CodexEstimatesSince reprices retained requests using one immutable catalog
-// snapshot. Never apply context tiers to monthly aggregate token counts.
 func (s *Store) CodexEstimatesSince(cutoff time.Time, cost func(string, int64, int64, int64, int64) (float64, bool)) (map[string]float64, map[string]int64, error) {
 	return codexEstimatesSince(s.db, cutoff, cost)
 }
@@ -133,7 +127,6 @@ func codexEstimatesSince(db usageQuerier, cutoff time.Time, cost func(string, in
 	return totals, fallbacks, rows.Err()
 }
 
-// PricedUsageSince holds a consistent read snapshot while collectors import.
 func (s *Store) PricedUsageSince(cutoff time.Time, cost func(string, int64, int64, int64, int64) (float64, bool)) ([]UsageRow, error) {
 	var opts *sql.TxOptions
 	if s.postgres {

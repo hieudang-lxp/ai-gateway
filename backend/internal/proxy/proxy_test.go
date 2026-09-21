@@ -31,8 +31,6 @@ func testPricing(t *testing.T) pricing.Pricing {
 	return pricing.Load(filepath.Join(t.TempDir(), "pricing.json"))
 }
 
-// waitForStats polls until StatsSince(epoch) returns wantModels rows (finalize
-// runs async on body close).
 func waitForStats(t *testing.T, st *store.Store, wantModels int) []store.StatRow {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -82,7 +80,7 @@ func TestProxyJSONResponseLogged(t *testing.T) {
 	if r.Model != "claude-sonnet-5" || r.Input != 100 || r.Output != 50 || r.CacheRead != 10 || r.CacheWrite != 4 {
 		t.Fatalf("bad row: %+v", r)
 	}
-	// sonnet default rates: (100*3 + 50*15 + 10*0.3 + 4*3.75)/1e6
+
 	want := (100*3.0 + 50*15.0 + 10*0.3 + 4*3.75) / 1e6
 	if diff := r.CostUSD - want; diff > 1e-12 || diff < -1e-12 {
 		t.Fatalf("cost = %v want %v", r.CostUSD, want)

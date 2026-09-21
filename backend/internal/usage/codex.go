@@ -25,7 +25,6 @@ func (u tokenUsage) normalized() (store.Usage, error) {
 	return store.Usage{Input: u.Input - u.Cached - u.Write, Output: u.Output, CacheRead: u.Cached, CacheWrite: u.Write}, nil
 }
 
-// Completed lines only: the writer may currently be appending the final line.
 func lines(r io.Reader, fn func([]byte) error) error {
 	br := bufio.NewReader(r)
 	for {
@@ -106,7 +105,7 @@ func ParseCodex(r io.Reader) ([]store.ExternalUsage, error) {
 			record := store.ExternalUsage{Source: "codex", ID: p.ResponseID, TS: e.Timestamp, Model: model, Usage: u}
 			record.SessionID, record.Project, record.SessionTitle = session, project, title
 			if p.ThreadID != "" && p.ThreadID != session {
-				// Forked histories can contain responses owned by the original thread.
+
 				record.SessionID, record.Project, record.SessionTitle = p.ThreadID, "", ""
 			}
 			if p.Total != nil && session != "" {
@@ -159,14 +158,12 @@ func ParseCodex(r io.Reader) ([]store.ExternalUsage, error) {
 		if aliases[row.ID] {
 			continue
 		}
-		// Once response accounting starts, token_count is only a UI rollup. Its
-		// cumulative baseline can diverge after resume/fork, so unmatched counters
-		// are not additional calls. Remove any fallback imported in an earlier poll.
+
 		if !firstDirect.IsZero() && !row.TS.Before(firstDirect) {
 			direct[0].Aliases = append(direct[0].Aliases, row.ID)
 			continue
 		}
-		// Compatibility for early response records without cumulative counters.
+
 		duplicate := false
 		for _, d := range direct {
 			if d.TS.Equal(row.TS) && d.Usage == row.Usage {

@@ -15,9 +15,6 @@ import (
 	"github.com/hieudang-lxp/ai-gateway/backend/internal/store"
 )
 
-// handleMessages runs the control plane for POST /v1/messages: budget check,
-// model routing, cache lookup — then proxies. Every internal failure falls
-// through to plain proxying (fail-open).
 func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	cfg := g.ctl.Current()
 	info := &reqInfo{start: time.Now(), requestID: uuid.NewString(), requestPath: r.URL.Path}
@@ -45,7 +42,6 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	info.model = model
 	info.requestModel = model
 
-	// Budget.
 	dayS, weekS, monthS := control.PeriodStarts(time.Now())
 	day, err1 := g.store.SpendSince(dayS)
 	week, err2 := g.store.SpendSince(weekS)
@@ -63,7 +59,6 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		log.Printf("budget check skipped (store error): %v %v %v", err1, err2, err3)
 	}
 
-	// Routing: rewrite the model field, preserving all other fields verbatim.
 	to, blocked := cfg.Routing.Route(model)
 	if blocked {
 		log.Printf("model blocked: %s", model)
@@ -84,7 +79,6 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Cache.
 	if cfg.Cache.Enabled && cfg.Cache.TTL > 0 {
 		key := control.CacheKey(body)
 		if hit, ok, err := g.store.CacheGet(key, cfg.Cache.TTL); err == nil && ok {
@@ -93,7 +87,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		} else if err != nil {
 			log.Printf("cache get failed: %v", err)
 		}
-		info.cacheKey = key // miss: capture the response for next time
+		info.cacheKey = key
 	}
 
 	r.Body = io.NopCloser(bytes.NewReader(body))
@@ -102,8 +96,6 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	g.proxy.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), infoKey, info)))
 }
 
-// serveCached replays a stored response and logs a zero-cost row with savings.
-// SSE bodies replay as one write — fine for a cache hit.
 func (g *Gateway) serveCached(w http.ResponseWriter, hit *store.CachedResponse, info *reqInfo) {
 	w.Header().Set("Content-Type", hit.ContentType)
 	w.WriteHeader(hit.Status)
