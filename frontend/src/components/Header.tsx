@@ -2,7 +2,7 @@ import { useCurrency } from "../features/currency/useCurrency";
 import { useUsageSummary } from "../features/usage/useUsageSummary";
 import { syncStatus, useSyncClock } from "../features/usage/syncStatus";
 import { pages, type Page } from "../lib/navigation";
-import { Layers } from "lucide-react";
+import { Layers, LayoutDashboard, Database } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { NavigationMenu, NavigationMenuItem, NavigationMenuLink, NavigationMenuList } from "@/components/ui/navigation-menu";
 
@@ -34,8 +34,24 @@ export function Header({ page, period }: { page: Page; period: string }) {
         </div>
         <div className="flex items-center justify-between gap-3">
           <NavigationMenu aria-label="Main navigation" viewport={false}>
-            <NavigationMenuList className="gap-5 sm:gap-7">
-              {pages.map(item => <NavigationMenuItem key={item.id}><NavigationMenuLink asChild active={page === item.id} className="rounded-none border-b-2 border-transparent bg-transparent px-1 pb-3 pt-1 text-sm font-medium text-slate-500 data-active:border-sky-700 data-active:bg-transparent data-active:text-sky-900"><a href={`#${item.id}`} aria-current={page === item.id ? "page" : undefined}>{item.label}</a></NavigationMenuLink></NavigationMenuItem>)}
+            <NavigationMenuList className="gap-0">
+              {pages.map(item => {
+                const Icon = item.id === "overview" ? LayoutDashboard : Database;
+                return (
+                  <NavigationMenuItem key={item.id}>
+                    <NavigationMenuLink
+                      asChild
+                      active={page === item.id}
+                      className="-mb-px h-12 flex-row items-center gap-2 rounded-none border-b-2 border-transparent bg-transparent px-3 py-0 text-sm font-medium text-slate-500 transition-colors hover:bg-transparent hover:text-sky-900 focus:bg-transparent focus:text-sky-900 focus-visible:ring-2 focus-visible:ring-inset sm:px-4 data-active:border-sky-600 data-active:bg-transparent data-active:text-sky-950 data-active:hover:bg-transparent data-active:focus:bg-transparent [&_svg]:text-current"
+                    >
+                      <a href={`#${item.id}`} aria-current={page === item.id ? "page" : undefined}>
+                        <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.75} />
+                        {item.label}
+                      </a>
+                    </NavigationMenuLink>
+                  </NavigationMenuItem>
+                );
+              })}
             </NavigationMenuList>
           </NavigationMenu>
           <span className="hidden pb-3 text-[13px] text-slate-400 lg:block" title={fetchedAt ? `Exchange rate updated ${fetchedAt.toLocaleString()}` : undefined}>{rate !== null ? `1 USD = ${new Intl.NumberFormat("vi-VN").format(rate)} ₫` : "Exchange rate unavailable"}</span>
