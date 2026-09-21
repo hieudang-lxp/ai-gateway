@@ -7,7 +7,7 @@ model routing and response caching — plus a Connect RPC stats API and a React
 dashboard. The separate cloud deployment supports Netlify, Render, and Turso
 for proxy statistics; the three-tool collector runs locally.
 
-- `backend/` — Go services `gateway`, `collector`, `usage` and the `aictl` CLI
+- `backend/` — Go services `gateway`, `collector`, `usage`, `sessions`, `insights` and the `aictl` CLI
 - `proto/` — buf-managed Connect RPC schema
 - `frontend/` — React + Vite dashboard, shadcn/ui + Tailwind CSS
 
@@ -16,18 +16,21 @@ Historical design plans and the former scan service remain available in Git hist
 
 ## Local Docker services: all three tools
 
-This monorepo runs three independent processes, NATS JetStream and PostgreSQL:
+This monorepo runs five independent services, NATS JetStream and PostgreSQL:
 
 | Service | Responsibility | Owned state |
 | --- | --- | --- |
 | `gateway` | Dashboard/API entry point, HTTP Anthropic proxy, cache and budgets | PostgreSQL `gateway`: calls, cache, traces and transactional outbox |
 | `collector` | Claude/Codex logs and Cursor API polling | PostgreSQL `collector`: durable event outbox |
 | `usage` | Deduplicate, price and aggregate events | PostgreSQL `usage` database and `usage-prices` cache |
+| `sessions` | Index session metadata, search and request timelines | PostgreSQL `sessions` database and `sessions-prices` cache |
+| `insights` | Period comparisons and session-level evidence | PostgreSQL `insights` database and `insights-prices` cache |
 | `nats` | Durable event transport | `nats-data` JetStream volume |
-| `postgres` | Three service databases in one local PostgreSQL 17 cluster | `usage-data` volume |
+| `postgres` | Five service databases in one local PostgreSQL 17 cluster | `usage-data` volume |
 
 Only gateway port 8788 is published, bound to localhost. The gateway forwards
-`/_usage` to the usage service over HTTP; Anthropic streaming also stays HTTP.
+`/_usage`, `/_sessions` (including `/detail`), and `/_insights` to their owning
+services over HTTP; Anthropic streaming also stays HTTP.
 Producers publish content-free metadata on `usage.ingested.v1`; collection
 status uses `collector.status.v1`. Only the collector mounts IDE logs and the
 Cursor session. Services do not read each other's databases during normal use.
@@ -49,8 +52,7 @@ JetStream retains up to 30 days / 2 GiB and rejects new messages at its size
 limit, leaving them queued locally. Monitor disk space and sync freshness.
 This is a single-node local deployment. The Compose PostgreSQL password default
 is for local development; override `POSTGRES_PASSWORD` before initializing a
-different environment. Project attribution, insights and alert rules are not
-part of this service extraction.
+different environment. Alert rules and historical price snapshots are not implemented.
 
 ### First-time setup (macOS)
 
@@ -65,6 +67,8 @@ must be running; Go and Node are only needed for development outside Docker.
 mkdir -p "$HOME/.local/share/ai-gateway" "$HOME/.config/ai-gateway" "$HOME/.codex/archived_sessions"
 test -d "$HOME/.claude/projects"
 test -d "$HOME/.codex/sessions"
+umask 077
+test -e "$HOME/.codex/session_index.jsonl" || touch "$HOME/.codex/session_index.jsonl"
 test -f "$HOME/Library/Application Support/Cursor/User/globalStorage/state.vscdb"
 ```
 
@@ -84,18 +88,20 @@ Open **http://localhost:8788/dashboard/**. The services run continuously with
 Closing the dashboard does not stop collection. Initial imports run at startup;
 large local histories can take longer than a normal poll.
 
-The header links to **Overview** (usage, period filters and proxy diagnostics)
-and **Data & Pricing** (collector status, coverage, price freshness and fallback
-assumptions). Links use `#overview` / `#data-pricing`, so refresh and browser
+The header links to **Overview** (usage and proxy diagnostics), **Sessions**
+(search and request timelines), **Insights** (comparisons and evidence), and
+**Data & Pricing** (collector status, coverage and price assumptions).
+Links use `#overview`, `#sessions`, `#insights`, and `#data-pricing`, so refresh and browser
 Back/Forward work without server routing changes. Switching views preserves the
 selected period and currency; a fresh page load defaults to the current month.
 The shared sync indicator flags missing/overdue collectors and connection errors.
 “Refresh status” reloads the API snapshot; it does not trigger a collector poll.
-Project attribution and historical price snapshots are not implemented yet.
+Session workspace attribution uses the recorded working directory; it is not a
+verified repository identity. Historical price snapshots are not implemented.
 Data & Pricing leads with sync health, each tool's amount and its pricing basis,
 then highlights unpriced events and substitute Codex prices. Collection details
 are expandable. The shared typography scale in `frontend/src/index.css` keeps
-both pages readable with larger text.
+all pages readable with larger text.
 The header shows one sync timestamp with a green status dot when all collectors
 are healthy; warnings remain visible if collection falls behind.
 
@@ -121,6 +127,49 @@ The existing Anthropic proxy remains at `localhost:8788`; Codex and Cursor do no
 need their model endpoints changed. Host data/session directories are mounted
 read-only. Only accounting metadata is persisted; prompts and access tokens are
 not stored in the ledger or logs. API credentials are never baked into the image.
+
+### Sessions, search and Insights
+
+Sessions searches recorded titles, workspace paths, models and session IDs.
+Search matches full-text words or a case-insensitive **session-ID prefix**, not
+arbitrary substrings. Source and exact model filters combine with the shared
+period. Lists use cursor pagination; opening a session shows its full retained
+history, with a paginated request timeline and explicit pricing labels.
+Deep links use `#sessions?source=codex&session_id=<id>`.
+
+Codex uses each thread's ID, with titles from the optional
+`~/.codex/session_index.jsonl`; root and subagent threads remain distinct.
+Claude uses its `sessionId` and latest recorded custom/AI title; subagent usage
+with the same session ID stays in that session. Cursor usage currently supplies
+no verified session ID: it remains included in usage totals but cannot be grouped
+into sessions. Events without metadata are counted as unattributed. Neither
+search nor timelines index prompts or replies. No titles are inferred from them.
+
+Insights compares the selected period with the immediately preceding interval
+of equal elapsed length. It ranks sessions by known usage value, flags low
+observed cache reuse (at least five events, 50K input-context tokens, under 10%
+cache reads), and links requests with at least 100K input-context tokens back to
+their session. These are observations, not promised savings. Comparisons depend
+on retained history, and current API estimates are not subscription charges.
+
+Each projection commits before acknowledging JetStream, using independent
+durables `sessions-index-v1` and `insights-index-v1`; the usage ledger retains
+`usage-ledger-v1`. A stopped consumer resumes its own cursor. Receipt deduplication,
+canonical event IDs and alias tombstones make replay safe. Both services own
+their databases and never query the usage database. Search has a PostgreSQL GIN
+index on the generated metadata document and a prefix index on session IDs.
+B-tree indexes cover time/source/model filtering and session timeline ordering;
+primary keys enforce source/event uniqueness.
+
+On upgrade, `postgres-init` creates the two databases without modifying existing
+ones. New consumers replay retained JetStream events, while collector startup
+rescans retained Claude/Codex logs and publishes enriched records. Initial
+indexing can lag the dashboard totals; each page shows its last index update.
+Restarting the collector safely reimports retained files. History no longer in
+either logs or JetStream cannot be reconstructed automatically: preserve database
+backups. The narrow Codex title-file mount is read-only; if Codex replaces that
+file atomically, recreate the collector to remount it:
+`docker compose up -d --force-recreate collector`.
 
 ### Periods and cost calculations
 
@@ -162,7 +211,7 @@ fee. Event counts are provider-specific and should not be compared as equal unit
 ### Host paths and configuration
 
 Configure host paths through `GATEWAY_CONFIG_DIR`,
-`CODEX_SESSIONS_DIR`, `CODEX_ARCHIVED_DIR`, `CLAUDE_PROJECTS_DIR`,
+`CODEX_SESSIONS_DIR`, `CODEX_ARCHIVED_DIR`, `CODEX_SESSION_INDEX`, `CLAUDE_PROJECTS_DIR`,
 `CURSOR_STATE_DIR`, and `GATEWAY_PORT`. See `compose.yaml` for macOS defaults;
 set the Cursor state directory for Linux/Windows hosts. Mount its directory, not
 only the database file, so SQLite WAL updates and refreshed sessions stay visible.
@@ -176,6 +225,7 @@ The collector reads only `cursorAuth/accessToken`, `cursorAuth/cachedEmail` and
 | `GATEWAY_CONFIG_DIR` | `$HOME/.config/ai-gateway` | Optional `pricing.json` and `gateway.yaml`; mounted read-only |
 | `CODEX_SESSIONS_DIR` | `$HOME/.codex/sessions` | Active Codex sessions |
 | `CODEX_ARCHIVED_DIR` | `$HOME/.codex/archived_sessions` | Archived Codex sessions |
+| `CODEX_SESSION_INDEX` | `$HOME/.codex/session_index.jsonl` | Read-only thread names; must be a regular file (an empty file is valid) |
 | `CLAUDE_PROJECTS_DIR` | `$HOME/.claude/projects` | Claude Code transcripts, including subagents |
 | `CURSOR_STATE_DIR` | `$HOME/Library/Application Support/Cursor/User/globalStorage` | Directory containing `state.vscdb` and its WAL files |
 | `GATEWAY_PORT` | `8788` | Host port, bound to `127.0.0.1` |
@@ -201,6 +251,8 @@ docker compose logs --tail 50
 curl 'http://localhost:8788/_usage'          # current month (default)
 curl 'http://localhost:8788/_usage?days=30'  # 0 = all collected history
 curl http://localhost:8788/healthz
+curl 'http://localhost:8788/_sessions?period=month&limit=25'
+curl 'http://localhost:8788/_insights?period=month'
 ```
 
 `/healthz` checks HTTP and the gateway database; `/_usage` includes each collector's health.
@@ -241,10 +293,10 @@ docker compose down          # remove containers/network; database volumes remai
 ```
 
 All runtime application tables now live in PostgreSQL: separate databases
-`gateway`, `collector`, and `usage` on the existing `usage-data` volume. The
+`gateway`, `collector`, `usage`, `sessions`, and `insights` on the existing `usage-data` volume. The
 `postgres-init` one-shot service creates missing databases on both new and
 existing clusters; it never drops an existing database. Port 5432 is not
-published. This local setup uses the same development owner for all three;
+published. This local setup uses the same development owner for all five;
 database separation does not provide role-level isolation.
 
 Back up all databases and retain JetStream state:
@@ -366,14 +418,16 @@ are zero. Filtering happens before pagination; raw history and sync retain them.
 
 ## Terminal companion: `aictl`
 
-The same Go module builds three services and a companion CLI:
+The same Go module builds five services and a companion CLI:
 
 ```text
 backend/
 ├── services/
 │   ├── gateway/   # HTTP entry point and Anthropic proxy
 │   ├── collector/ # collection and durable publishing
-│   └── usage/     # PostgreSQL ledger and summary API
+│   ├── usage/     # PostgreSQL ledger and summary API
+│   ├── sessions/  # searchable session projection and timeline API
+│   └── insights/  # independent analytics projection and API
 ├── cli/aictl/     # read-only commands using gateway HTTP API
 ├── contracts/events/ # versioned service event types
 └── internal/     # service implementations and shared packages
@@ -437,7 +491,7 @@ both components, so these host runtimes are optional for normal use.
 ```sh
 cd backend
 go test ./...
-go build ./services/gateway ./services/collector ./services/usage ./cli/aictl
+go build ./services/... ./cli/aictl
 cd ../frontend
 npm ci
 npm test
@@ -447,16 +501,19 @@ cd ..
 docker compose up -d --build
 ```
 
-Run PostgreSQL integration tests with:
+Run PostgreSQL and isolated NATS integration tests with:
 
 ```sh
 docker compose --profile test run --build --rm tests
 ```
 
-They create and remove temporary schemas without changing real usage. Plain
-`go test ./...` skips PostgreSQL tests unless `TEST_DATABASE_URL` is set.
+They create and remove temporary PostgreSQL schemas without changing real usage.
+NATS tests use the separate `nats-test` service, never the production stream. Plain
+`go test ./...` skips PostgreSQL/NATS tests unless `TEST_DATABASE_URL` /
+`TEST_NATS_URL` are set, respectively.
 Coverage includes outbox rollback/restart, duplicate and alias replay, stale
-status ordering, and local-route/upstream-error regressions. The optional test
+status ordering, independent durable fan-out/restart, indexed search and pagination,
+metadata updates, per-request pricing, insights thresholds, and proxy regressions. The optional test
 service does not run during a normal Compose start.
 
 For frontend iteration, leave Docker running and run `npm run dev` in
@@ -482,10 +539,12 @@ Relevant implementation entry points:
 - `backend/internal/aictl/`: CLI logic; `cli/aictl/main.go` handles process exit only.
 - `backend/internal/eventbus/`: PostgreSQL outbox, JetStream publisher and durable consumer; explicit legacy SQLite support.
 - `backend/internal/ledger/`: PostgreSQL schema, usage reads and explicit legacy import.
+- `backend/internal/explore/`: independent sessions/insights projections, search indexes, queries and HTTP APIs.
 - `backend/internal/store/`: gateway PostgreSQL schema, calls/cache/outbox, plus legacy SQLite compatibility.
 - `backend/internal/migration/`: transactional SQLite snapshot copy, checksum verification and safe reruns.
 - `backend/internal/pricing/catalog.go`: hourly catalog refresh, disk cache and Codex estimates.
 - `frontend/src/features/usage/`: unified usage, period controls and source status.
+- `frontend/src/features/sessions/` and `features/insights/`: indexed search, timelines, comparisons and evidence links.
 - `frontend/src/features/proxy/`: proxy budgets, cache, charts and request diagnostics.
 - `frontend/src/features/auth/`: dashboard token handling and authentication boundary.
 - `frontend/src/features/currency/`: currency context, exchange rates and formatting.

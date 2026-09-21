@@ -14,14 +14,23 @@ import (
 func ParseClaude(r io.Reader, prices pricing.Pricing) ([]store.ExternalUsage, error) {
 	byID := map[string]store.ExternalUsage{}
 	order := []string{}
+	titles, custom := map[string]string{}, map[string]bool{}
+	var currentSession, currentProject string
 	err := lines(r, func(line []byte) error {
-		if !bytes.Contains(line, []byte(`"usage"`)) {
+		if !bytes.Contains(line, []byte(`"usage"`)) && !bytes.Contains(line, []byte(`"sessionId"`)) && !bytes.Contains(line, []byte(`"ai-title"`)) && !bytes.Contains(line, []byte(`"custom-title"`)) {
 			return nil
 		}
 		var e struct {
-			Type    string    `json:"type"`
-			TS      time.Time `json:"timestamp"`
-			Message struct {
+			Type        string    `json:"type"`
+			TS          time.Time `json:"timestamp"`
+			SessionID   string    `json:"sessionId"`
+			CWD         string    `json:"cwd"`
+			AITitle     string    `json:"aiTitle"`
+			CustomTitle string    `json:"customTitle"`
+			Slug        string    `json:"slug"`
+			IsSidechain bool      `json:"isSidechain"`
+			AgentID     string    `json:"agentId"`
+			Message     struct {
 				ID    string `json:"id"`
 				Model string `json:"model"`
 				Usage *struct {
@@ -38,12 +47,29 @@ func ParseClaude(r io.Reader, prices pricing.Pricing) ([]store.ExternalUsage, er
 		if err := json.Unmarshal(line, &e); err != nil {
 			return err
 		}
+		if e.SessionID != "" {
+			currentSession = e.SessionID
+		}
+		if e.CWD != "" {
+			currentProject = metadataText(e.CWD, 4096)
+		}
+		if currentSession != "" {
+			if e.Type == "custom-title" && e.CustomTitle != "" {
+				titles[currentSession] = metadataText(e.CustomTitle, 512)
+				custom[currentSession] = true
+			} else if e.Type == "ai-title" && e.AITitle != "" && !custom[currentSession] {
+				titles[currentSession] = metadataText(e.AITitle, 512)
+			} else if titles[currentSession] == "" && e.Slug != "" && !e.IsSidechain && e.AgentID == "" {
+				titles[currentSession] = metadataText(e.Slug, 512)
+			}
+		}
 		m := e.Message
 		if e.Type != "assistant" || m.Usage == nil || m.ID == "" || m.Model == "<synthetic>" {
 			return nil
 		}
 		u := m.Usage
 		record := store.ExternalUsage{Source: "claude_code", ID: m.ID, TS: e.TS, Model: m.Model, Usage: store.Usage{Input: u.Input, Output: u.Output, CacheRead: u.Read, CacheWrite: u.Write}}
+		record.SessionID, record.Project = currentSession, currentProject
 		// Use configured rates only for known Claude families; never price arbitrary
 		// Codex/Cursor model names through the proxy's default fallback.
 		_, known := prices[m.Model]
@@ -77,7 +103,9 @@ func ParseClaude(r io.Reader, prices pricing.Pricing) ([]store.ExternalUsage, er
 	})
 	out := make([]store.ExternalUsage, 0, len(order))
 	for _, id := range order {
-		out = append(out, byID[id])
+		r := byID[id]
+		r.SessionTitle = titles[r.SessionID]
+		out = append(out, r)
 	}
 	return out, err
 }

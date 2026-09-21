@@ -28,6 +28,13 @@ type ExternalUsage struct {
 	Usage    Usage
 	CostUSD  *float64
 	CostKind string
+	// Optional metadata, never prompt or response content. Older v1 consumers
+	// ignore these additive fields; retained events can be enriched on replay.
+	SessionID    string
+	SessionTitle string
+	Project      string
+	// Observation revision for metadata and equal-token accounting corrections.
+	SessionUpdatedAt time.Time
 }
 
 type SourceStatus struct {

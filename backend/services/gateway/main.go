@@ -83,6 +83,8 @@ func configPath(file string) string {
 func runServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	usageURL := fs.String("usage-url", os.Getenv("USAGE_URL"), "independent usage service URL; disables in-process collectors")
+	sessionsURL := fs.String("sessions-url", os.Getenv("SESSIONS_URL"), "independent sessions/search service URL")
+	insightsURL := fs.String("insights-url", os.Getenv("INSIGHTS_URL"), "independent insights service URL")
 	natsURL := fs.String("nats-url", os.Getenv("NATS_URL"), "NATS JetStream URL for durable proxy usage events")
 	home, _ := os.UserHomeDir()
 	collect := fs.Bool("collect", true, "automatically collect Codex, Claude Code and Cursor usage")
@@ -143,6 +145,17 @@ func runServe(args []string) {
 	mux.Handle("/rpc/", http.StripPrefix("/rpc", rpcCORS.Handler(api.New(st, func() control.BudgetConfig {
 		return ctl.Current().Budget
 	}, ""))))
+	for path, address := range map[string]string{"/_sessions": *sessionsURL, "/_insights": *insightsURL} {
+		if address == "" {
+			continue
+		}
+		forward, err := serviceProxy(address)
+		if err != nil {
+			log.Fatalf("invalid %s service URL", path)
+		}
+		mux.Handle(path, rpcCORS.Handler(forward))
+		mux.Handle(path+"/", rpcCORS.Handler(forward))
+	}
 	if *usageURL != "" {
 		target, err := url.Parse(*usageURL)
 		if err != nil || target.Host == "" {

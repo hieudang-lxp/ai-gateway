@@ -44,7 +44,7 @@ func lines(r io.Reader, fn func([]byte) error) error {
 
 func ParseCodex(r io.Reader) ([]store.ExternalUsage, error) {
 	var direct, legacy []store.ExternalUsage
-	var session, model string
+	var session, model, project, title string
 	var previous tokenUsage
 	aliases := map[string]bool{}
 	legacyID := func(total tokenUsage) string {
@@ -65,23 +65,31 @@ func ParseCodex(r io.Reader) ([]store.ExternalUsage, error) {
 		switch e.Type {
 		case "session_meta":
 			var p struct {
-				ID string `json:"id"`
+				ID    string `json:"id"`
+				CWD   string `json:"cwd"`
+				Title string `json:"title"`
 			}
 			if err := json.Unmarshal(e.Payload, &p); err != nil {
 				return err
 			}
 			session = p.ID
+			project, title = metadataText(p.CWD, 4096), metadataText(p.Title, 512)
 		case "turn_context":
 			var p struct {
 				Model string `json:"model"`
+				CWD   string `json:"cwd"`
 			}
 			if err := json.Unmarshal(e.Payload, &p); err != nil {
 				return err
 			}
 			model = p.Model
+			if p.CWD != "" {
+				project = metadataText(p.CWD, 4096)
+			}
 		case "token_usage_record":
 			var p struct {
 				ResponseID string      `json:"response_id"`
+				ThreadID   string      `json:"thread_id"`
 				Usage      tokenUsage  `json:"usage"`
 				Total      *tokenUsage `json:"thread_token_usage"`
 			}
@@ -96,6 +104,11 @@ func ParseCodex(r io.Reader) ([]store.ExternalUsage, error) {
 				return err
 			}
 			record := store.ExternalUsage{Source: "codex", ID: p.ResponseID, TS: e.Timestamp, Model: model, Usage: u}
+			record.SessionID, record.Project, record.SessionTitle = session, project, title
+			if p.ThreadID != "" && p.ThreadID != session {
+				// Forked histories can contain responses owned by the original thread.
+				record.SessionID, record.Project, record.SessionTitle = p.ThreadID, "", ""
+			}
 			if p.Total != nil && session != "" {
 				alias := legacyID(*p.Total)
 				record.Aliases = []string{alias}
@@ -132,7 +145,7 @@ func ParseCodex(r io.Reader) ([]store.ExternalUsage, error) {
 				return fmt.Errorf("Codex usage missing session ID")
 			}
 			id := legacyID(total)
-			legacy = append(legacy, store.ExternalUsage{Source: "codex", ID: id, TS: e.Timestamp, Model: model, Usage: u})
+			legacy = append(legacy, store.ExternalUsage{Source: "codex", ID: id, TS: e.Timestamp, Model: model, Usage: u, SessionID: session, Project: project, SessionTitle: title})
 		}
 		return nil
 	})

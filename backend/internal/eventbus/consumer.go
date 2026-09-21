@@ -13,14 +13,20 @@ import (
 )
 
 func Consume(ctx context.Context, url string, apply func(events.Envelope) error, quarantine func(string, string, string) error) {
+	ConsumeNamed(ctx, url, "usage-ledger-v1", apply, quarantine)
+}
+
+// Each service uses its own durable cursor: publishing fans out to independent
+// subscribers instead of load-balancing messages between different databases.
+func ConsumeNamed(ctx context.Context, url, durable string, apply func(events.Envelope) error, quarantine func(string, string, string) error) {
 	for ctx.Err() == nil {
 		nc, js, err := Connect(url)
 		if err == nil {
-			err = consume(ctx, js, apply, quarantine)
+			err = consumeNamed(ctx, js, durable, apply, quarantine)
 			nc.Close()
 		}
 		if err != nil && ctx.Err() == nil {
-			log.Printf("usage consumer retry: %v", err)
+			log.Printf("consumer %s retry: %v", durable, err)
 		}
 		select {
 		case <-ctx.Done():
@@ -30,13 +36,17 @@ func Consume(ctx context.Context, url string, apply func(events.Envelope) error,
 	}
 }
 func consume(ctx context.Context, js nats.JetStreamContext, apply func(events.Envelope) error, quarantine func(string, string, string) error) error {
+	return consumeNamed(ctx, js, "usage-ledger-v1", apply, quarantine)
+}
+
+func consumeNamed(ctx context.Context, js nats.JetStreamContext, durable string, apply func(events.Envelope) error, quarantine func(string, string, string) error) error {
 	// A single ordered consumer preserves collector batch/status order. Separate
 	// subscribers for future services get independent durable consumers.
-	_, err := js.AddConsumer(events.Stream, &nats.ConsumerConfig{Durable: "usage-ledger-v1", AckPolicy: nats.AckExplicitPolicy, DeliverPolicy: nats.DeliverAllPolicy, MaxAckPending: 1, AckWait: 60 * time.Second})
+	_, err := js.AddConsumer(events.Stream, &nats.ConsumerConfig{Durable: durable, AckPolicy: nats.AckExplicitPolicy, DeliverPolicy: nats.DeliverAllPolicy, MaxAckPending: 1, AckWait: 60 * time.Second})
 	if err != nil {
 		return err
 	}
-	sub, err := js.PullSubscribe("", "usage-ledger-v1", nats.Bind(events.Stream, "usage-ledger-v1"))
+	sub, err := js.PullSubscribe("", durable, nats.Bind(events.Stream, durable))
 	if err != nil {
 		return err
 	}

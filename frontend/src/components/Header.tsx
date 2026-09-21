@@ -2,7 +2,7 @@ import { useCurrency } from "../features/currency/useCurrency";
 import { useUsageSummary } from "../features/usage/useUsageSummary";
 import { syncStatus, useSyncClock } from "../features/usage/syncStatus";
 import { pages, type Page } from "../lib/navigation";
-import { Layers, LayoutDashboard, Database } from "lucide-react";
+import { Layers, LayoutDashboard, Database, MessagesSquare, ChartNoAxesCombined } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { NavigationMenu, NavigationMenuItem, NavigationMenuLink, NavigationMenuList } from "@/components/ui/navigation-menu";
 
@@ -33,16 +33,16 @@ export function Header({ page, period }: { page: Page; period: string }) {
           </div>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <NavigationMenu aria-label="Main navigation" viewport={false}>
-            <NavigationMenuList className="gap-0">
+          <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden"><NavigationMenu aria-label="Main navigation" viewport={false} className="max-w-none justify-start">
+            <NavigationMenuList className="w-max flex-nowrap gap-0">
               {pages.map(item => {
-                const Icon = item.id === "overview" ? LayoutDashboard : Database;
+                const Icon = { overview: LayoutDashboard, sessions: MessagesSquare, insights: ChartNoAxesCombined, "data-pricing": Database }[item.id];
                 return (
                   <NavigationMenuItem key={item.id}>
                     <NavigationMenuLink
                       asChild
                       active={page === item.id}
-                      className="-mb-px h-12 flex-row items-center gap-2 rounded-none border-b-2 border-transparent bg-transparent px-3 py-0 text-sm font-medium text-slate-500 transition-colors hover:bg-transparent hover:text-sky-900 focus:bg-transparent focus:text-sky-900 focus-visible:ring-2 focus-visible:ring-inset sm:px-4 data-active:border-sky-600 data-active:bg-transparent data-active:text-sky-950 data-active:hover:bg-transparent data-active:focus:bg-transparent [&_svg]:text-current"
+                      className="h-12 whitespace-nowrap flex-row items-center gap-2 rounded-none border-b-2 border-transparent bg-transparent px-3 py-0 text-sm font-medium text-slate-500 transition-colors hover:bg-transparent hover:text-sky-900 focus:bg-transparent focus:text-sky-900 focus-visible:ring-2 focus-visible:ring-inset sm:px-4 data-active:border-sky-600 data-active:bg-transparent data-active:text-sky-950 data-active:hover:bg-transparent data-active:focus:bg-transparent [&_svg]:text-current"
                     >
                       <a href={`#${item.id}`} aria-current={page === item.id ? "page" : undefined}>
                         <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.75} />
@@ -53,7 +53,7 @@ export function Header({ page, period }: { page: Page; period: string }) {
                 );
               })}
             </NavigationMenuList>
-          </NavigationMenu>
+          </NavigationMenu></div>
           <span className="hidden pb-3 text-[13px] text-slate-400 lg:block" title={fetchedAt ? `Exchange rate updated ${fetchedAt.toLocaleString()}` : undefined}>{rate !== null ? `1 USD = ${new Intl.NumberFormat("vi-VN").format(rate)} ₫` : "Exchange rate unavailable"}</span>
           <a href="#data-pricing" aria-label={sync.label} className={`mb-3 flex items-center gap-1.5 text-[12px] sm:hidden ${sync.healthy ? "text-emerald-700" : "text-amber-700"}`}><span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${sync.healthy ? "bg-emerald-500" : "bg-amber-500"}`} />{sync.healthy ? "Synced" : "Check sync"}</a>
         </div>

@@ -13,6 +13,8 @@ services:
     environment:
       TZ: Asia/Ho_Chi_Minh
       USAGE_URL: http://usage:8790
+      SESSIONS_URL: http://sessions:8791
+      INSIGHTS_URL: http://insights:8792
       NATS_URL: nats://nats:4222
       DATABASE_URL: postgres://usage@postgres:5432/gateway?sslmode=disable
       PGPASSWORD: ${POSTGRES_PASSWORD:-local-ai-gateway}
@@ -35,6 +37,12 @@ services:
       - ${GATEWAY_CONFIG_DIR:-${HOME}/.config/ai-gateway}:/config:ro
       - ${CODEX_SESSIONS_DIR:-${HOME}/.codex/sessions}:/sources/codex/sessions:ro
       - ${CODEX_ARCHIVED_DIR:-${HOME}/.codex/archived_sessions}:/sources/codex/archived_sessions:ro
+      - type: bind
+        source: ${CODEX_SESSION_INDEX:-${HOME}/.codex/session_index.jsonl}
+        target: /sources/codex/session_index.jsonl
+        read_only: true
+        bind:
+          create_host_path: false
       - ${CLAUDE_PROJECTS_DIR:-${HOME}/.claude/projects}:/sources/claude:ro
       # Only the collector can access the Cursor session; directory mounts follow WAL rotations.
       - ${CURSOR_STATE_DIR:-${HOME}/Library/Application Support/Cursor/User/globalStorage}:/sources/cursor:ro
@@ -77,6 +85,54 @@ services:
       interval: 10s
       timeout: 5s
       start_period: 20s
+    logging: *logging
+
+  sessions:
+    image: ai-gateway-local:latest
+    entrypoint: ["sessions"]
+    command: []
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+      NATS_URL: nats://nats:4222
+      DATABASE_URL: postgres://usage@postgres:5432/sessions?sslmode=disable
+      PGPASSWORD: ${POSTGRES_PASSWORD:-local-ai-gateway}
+    volumes:
+      - sessions-prices:/data
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+      nats:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8791/healthz"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+    logging: *logging
+
+  insights:
+    image: ai-gateway-local:latest
+    entrypoint: ["insights"]
+    command: []
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+      NATS_URL: nats://nats:4222
+      DATABASE_URL: postgres://usage@postgres:5432/insights?sslmode=disable
+      PGPASSWORD: ${POSTGRES_PASSWORD:-local-ai-gateway}
+    volumes:
+      - insights-prices:/data
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+      nats:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8792/healthz"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
     logging: *logging
 
   nats:
@@ -142,13 +198,23 @@ services:
     command: ["./...", "-count=1"]
     environment:
       TEST_DATABASE_URL: postgres://usage@postgres:5432/usage?sslmode=disable
+      TEST_NATS_URL: nats://nats-test:4222
       PGPASSWORD: ${POSTGRES_PASSWORD:-local-ai-gateway}
     depends_on:
       postgres:
         condition: service_healthy
+      nats-test:
+        condition: service_started
+
+  nats-test:
+    profiles: ["test"]
+    image: nats:2.12-alpine
+    command: ["--jetstream"]
 
 volumes:
   collector-data: # Retained legacy SQLite volume; not mounted by runtime services.
   usage-data:
   usage-prices:
+  sessions-prices:
+  insights-prices:
   nats-data:

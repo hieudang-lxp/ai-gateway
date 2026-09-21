@@ -7,4 +7,8 @@ SELECT 'CREATE DATABASE gateway' WHERE NOT EXISTS (SELECT FROM pg_database WHERE
 \gexec
 SELECT 'CREATE DATABASE collector' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'collector')
 \gexec
+SELECT 'CREATE DATABASE sessions' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'sessions')
+\gexec
+SELECT 'CREATE DATABASE insights' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'insights')
+\gexec
 SQL

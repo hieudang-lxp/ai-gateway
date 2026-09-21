@@ -136,6 +136,15 @@ func (c *Collector) finish(source string, files int, err error) {
 
 func (c *Collector) CollectLocal() {
 	for _, source := range []string{"codex", "claude_code"} {
+		var names map[string]sessionName
+		var namesModified time.Time
+		if source == "codex" {
+			var err error
+			names, namesModified, err = readSessionNames(filepath.Join(c.config.CodexHome, "session_index.jsonl"))
+			if err != nil {
+				log.Printf("Codex session names unavailable; collecting usage without names")
+			}
+		}
 		roots := []string{c.config.ClaudeProjects}
 		if source == "codex" {
 			roots = []string{filepath.Join(c.config.CodexHome, "sessions"), filepath.Join(c.config.CodexHome, "archived_sessions")}
@@ -164,6 +173,9 @@ func (c *Collector) CollectLocal() {
 					return err
 				}
 				signature := fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
+				if source == "codex" {
+					signature += fmt.Sprintf(":%d", namesModified.UnixNano())
+				}
 				if c.files[path] == signature {
 					return nil
 				}
@@ -183,6 +195,17 @@ func (c *Collector) CollectLocal() {
 						firstErr = fmt.Errorf("%s: %w", filepath.Base(path), err)
 					}
 					return nil
+				}
+				for i := range rows {
+					// A fresh observation can correct equal-token snapshots or prices
+					// after restart even when the source file itself is unchanged.
+					rows[i].SessionUpdatedAt = time.Now()
+					if name, ok := names[rows[i].SessionID]; ok && name.Name != "" {
+						rows[i].SessionTitle = name.Name
+						if name.UpdatedAt.After(rows[i].SessionUpdatedAt) {
+							rows[i].SessionUpdatedAt = name.UpdatedAt
+						}
+					}
 				}
 				if err = c.sink.ImportUsage(rows); err != nil {
 					return err
@@ -208,6 +231,9 @@ func (c *Collector) CollectCursor(ctx context.Context) {
 		now := time.Now()
 		rows, err = NewCursorClient().Fetch(ctx, creds, now.AddDate(0, 0, -c.config.CursorHistoryDays), now)
 		if err == nil {
+			for i := range rows {
+				rows[i].SessionUpdatedAt = now
+			}
 			err = c.sink.ImportUsage(rows)
 		}
 	}
