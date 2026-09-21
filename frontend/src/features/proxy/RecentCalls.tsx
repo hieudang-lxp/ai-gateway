@@ -38,6 +38,7 @@ export function RecentCalls() {
           )}
         </div>
       </div>
+      <p className="mb-3 text-xs text-slate-500">429 responses with no recorded usage are hidden.</p>
       <div className="overflow-x-auto">
         <Table className="w-full text-sm">
           <TableHeader>

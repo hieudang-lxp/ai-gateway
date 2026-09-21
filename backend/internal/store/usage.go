@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"github.com/hieudang-lxp/ai-gateway/backend/contracts/events"
@@ -24,7 +25,7 @@ func (s *Store) ImportUsage(events []ExternalUsage) error {
 		return err
 	}
 	defer tx.Rollback()
-	stmt, err := tx.Prepare(`INSERT INTO external_usage VALUES(?,?,?,?,?,?,?,?,?,?)
+	stmt, err := tx.Prepare(`INSERT INTO external_usage VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
  ON CONFLICT(source,event_id) DO UPDATE SET
  input_tokens=excluded.input_tokens,output_tokens=excluded.output_tokens,
  cache_read_tokens=excluded.cache_read_tokens,cache_write_tokens=excluded.cache_write_tokens,
@@ -41,7 +42,7 @@ func (s *Store) ImportUsage(events []ExternalUsage) error {
 		}
 		for _, alias := range r.Aliases {
 			if alias != r.ID {
-				if _, err = tx.Exec(`DELETE FROM external_usage WHERE source=? AND event_id=?`, r.Source, alias); err != nil {
+				if _, err = tx.Exec(`DELETE FROM external_usage WHERE source=$1 AND event_id=$2`, r.Source, alias); err != nil {
 					return err
 				}
 			}
@@ -88,7 +89,7 @@ func unifiedUsageSince(db usageQuerier, cutoff time.Time) ([]UsageRow, error) {
  ) SELECT source,model,COUNT(*),SUM(input_tokens),SUM(output_tokens),SUM(cache_read_tokens),SUM(cache_write_tokens),
  COALESCE(SUM(cost_usd),0),SUM(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END),
  SUM(CASE WHEN cost_kind='estimated' THEN 1 ELSE 0 END),MIN(ts),MAX(ts)
- FROM ledger WHERE ts>=? GROUP BY source,model ORDER BY source,SUM(input_tokens+output_tokens+cache_read_tokens+cache_write_tokens) DESC`, cutoff.Unix())
+ FROM ledger WHERE ts>=$1 GROUP BY source,model ORDER BY source,SUM(input_tokens+output_tokens+cache_read_tokens+cache_write_tokens) DESC`, cutoff.Unix())
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +111,7 @@ func (s *Store) CodexEstimatesSince(cutoff time.Time, cost func(string, int64, i
 	return codexEstimatesSince(s.db, cutoff, cost)
 }
 func codexEstimatesSince(db usageQuerier, cutoff time.Time, cost func(string, int64, int64, int64, int64) (float64, bool)) (map[string]float64, map[string]int64, error) {
-	rows, err := db.Query(`SELECT model,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens FROM external_usage WHERE source='codex' AND ts>=?`, cutoff.Unix())
+	rows, err := db.Query(`SELECT model,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens FROM external_usage WHERE source='codex' AND ts>=$1`, cutoff.Unix())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -134,7 +135,11 @@ func codexEstimatesSince(db usageQuerier, cutoff time.Time, cost func(string, in
 
 // PricedUsageSince holds a consistent read snapshot while collectors import.
 func (s *Store) PricedUsageSince(cutoff time.Time, cost func(string, int64, int64, int64, int64) (float64, bool)) ([]UsageRow, error) {
-	tx, err := s.db.Begin()
+	var opts *sql.TxOptions
+	if s.postgres {
+		opts = &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}
+	}
+	tx, err := s.db.BeginTx(context.Background(), opts)
 	if err != nil {
 		return nil, err
 	}

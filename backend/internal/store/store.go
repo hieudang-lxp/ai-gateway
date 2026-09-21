@@ -33,10 +33,11 @@ type Record struct {
 	SavedUSD          float64
 }
 
-// Store wraps the SQLite connection holding the calls table.
+// Store owns gateway calls, cache and the transactional event outbox.
 type Store struct {
 	db          *sql.DB
 	eventOrigin string
+	postgres    bool
 }
 
 func Open(path string) (*Store, error) {
@@ -115,28 +116,32 @@ func (s *Store) Insert(r Record) error {
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.Exec(
+	if s.postgres {
+		// Allocate IDs in commit order for the legacy ID-based sync cursor.
+		// PostgreSQL sequences alone allow a later ID to commit first.
+		if _, err = tx.Exec(`SELECT pg_advisory_xact_lock(824782)`); err != nil {
+			return err
+		}
+	}
+	var id int64
+	err = tx.QueryRow(
 		`INSERT INTO calls
 		 (ts, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, est_cost_usd, latency_ms, status, routed_from, cache_hit, saved_usd,request_id,request_model,request_path,model_source,upstream_request_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?,?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,$13,$14,$15,$16,$17) RETURNING id`,
 		r.TS.Unix(), r.Model,
 		r.Usage.Input, r.Usage.Output, r.Usage.CacheRead, r.Usage.CacheWrite,
 		r.CostUSD, r.LatencyMS, r.Status,
 		r.RoutedFrom, boolToInt(r.CacheHit), r.SavedUSD,
 		r.RequestID, r.RequestModel, r.RequestPath, r.ModelSource, r.UpstreamRequestID,
-	)
+	).Scan(&id)
 	if err != nil {
 		return err
 	}
 	if s.eventOrigin != "" {
-		id, err := result.LastInsertId()
-		if err != nil {
-			return err
-		}
 		if err = eventbus.Enqueue(tx, events.Subject, events.Envelope{Rows: []events.ExternalUsage{s.callEvent(Call{ID: id, Record: r})}}); err != nil {
 			return err
 		}
-		if _, err = tx.Exec(`UPDATE gateway_event_state SET last_id=? WHERE id=1`, id); err != nil {
+		if _, err = tx.Exec(`UPDATE gateway_event_state SET last_id=CASE WHEN last_id < $1 THEN $1 ELSE last_id END WHERE id=1`, id); err != nil {
 			return err
 		}
 	}
@@ -169,7 +174,7 @@ func (s *Store) StatsSince(cutoff time.Time) ([]StatRow, error) {
 	rows, err := s.db.Query(
 		`SELECT model, COUNT(*), SUM(input_tokens), SUM(output_tokens),
 		        SUM(cache_read_tokens), SUM(cache_write_tokens), SUM(est_cost_usd)
-		 FROM calls WHERE ts >= ?
+		 FROM calls WHERE ts >= $1
 		 GROUP BY model ORDER BY SUM(est_cost_usd) DESC`,
 		cutoff.Unix(),
 	)
@@ -193,7 +198,7 @@ func (s *Store) StatsSince(cutoff time.Time) ([]StatRow, error) {
 func (s *Store) SpendSince(cutoff time.Time) (float64, error) {
 	var v float64
 	err := s.db.QueryRow(
-		`SELECT COALESCE(SUM(est_cost_usd), 0) FROM calls WHERE ts >= ?`,
+		`SELECT COALESCE(SUM(est_cost_usd), 0) FROM calls WHERE ts >= $1`,
 		cutoff.Unix(),
 	).Scan(&v)
 	return v, err
@@ -215,7 +220,7 @@ func (s *Store) CachePut(key string, c CachedResponse) error {
 	}
 	_, err := s.db.Exec(
 		`INSERT INTO cache (key, created, status, content_type, body, cost_usd, model)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 ON CONFLICT(key) DO UPDATE SET created=excluded.created, status=excluded.status,
 		   content_type=excluded.content_type, body=excluded.body,
 		   cost_usd=excluded.cost_usd, model=excluded.model`,
@@ -230,7 +235,7 @@ func (s *Store) CacheGet(key string, maxAge time.Duration) (*CachedResponse, boo
 	var c CachedResponse
 	var created int64
 	err := s.db.QueryRow(
-		`SELECT created, status, content_type, body, cost_usd, model FROM cache WHERE key = ?`, key,
+		`SELECT created, status, content_type, body, cost_usd, model FROM cache WHERE key = $1`, key,
 	).Scan(&created, &c.Status, &c.ContentType, &c.Body, &c.CostUSD, &c.Model)
 	if err == sql.ErrNoRows {
 		return nil, false, nil
@@ -239,7 +244,7 @@ func (s *Store) CacheGet(key string, maxAge time.Duration) (*CachedResponse, boo
 		return nil, false, err
 	}
 	if time.Since(time.Unix(created, 0)) > maxAge {
-		_, _ = s.db.Exec(`DELETE FROM cache WHERE key = ?`, key)
+		_, _ = s.db.Exec(`DELETE FROM cache WHERE key = $1`, key)
 		return nil, false, nil
 	}
 	return &c, true, nil
@@ -273,10 +278,10 @@ func (s *Store) EnsureSyncSchema() error {
 // InsertSynced writes one local row into a remote store, deduped on local_id.
 func (s *Store) InsertSynced(c Call) error {
 	_, err := s.db.Exec(
-		`INSERT OR IGNORE INTO calls
+		`INSERT INTO calls
 		 (local_id, ts, model, routed_from, input_tokens, output_tokens,
 		  cache_read_tokens, cache_write_tokens, est_cost_usd, latency_ms, status, cache_hit, saved_usd,request_id,request_model,request_path,model_source,upstream_request_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?,?)`,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,$14,$15,$16,$17,$18) ON CONFLICT DO NOTHING`,
 		c.ID, c.TS.Unix(), c.Model, c.RoutedFrom,
 		c.Usage.Input, c.Usage.Output, c.Usage.CacheRead, c.Usage.CacheWrite,
 		c.CostUSD, c.LatencyMS, c.Status, boolToInt(c.CacheHit), c.SavedUSD,
@@ -299,7 +304,7 @@ func (s *Store) LastSyncedID() (int64, error) {
 
 func (s *Store) SetLastSyncedID(id int64) error {
 	_, err := s.db.Exec(
-		`INSERT INTO sync_state (id, last_synced) VALUES (1, ?)
+		`INSERT INTO sync_state (id, last_synced) VALUES (1, $1)
 		 ON CONFLICT(id) DO UPDATE SET last_synced = excluded.last_synced`, id)
 	return err
 }
@@ -307,7 +312,7 @@ func (s *Store) SetLastSyncedID(id int64) error {
 func (s *Store) WriteBudgetSnapshot(dw, dh, ww, wh, mw, mh float64) error {
 	_, err := s.db.Exec(
 		`INSERT INTO budget_snapshot (id, daily_warn, daily_hard, weekly_warn, weekly_hard, monthly_warn, monthly_hard, updated_at)
-		 VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+		 VALUES (1, $1, $2, $3, $4, $5, $6, $7)
 		 ON CONFLICT(id) DO UPDATE SET daily_warn=excluded.daily_warn, daily_hard=excluded.daily_hard,
 		   weekly_warn=excluded.weekly_warn, weekly_hard=excluded.weekly_hard,
 		   monthly_warn=excluded.monthly_warn, monthly_hard=excluded.monthly_hard,

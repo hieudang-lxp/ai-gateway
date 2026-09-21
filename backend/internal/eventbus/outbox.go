@@ -12,11 +12,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hieudang-lxp/ai-gateway/backend/contracts/events"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/nats-io/nats.go"
 	_ "modernc.org/sqlite"
 )
 
 const Schema = `CREATE TABLE IF NOT EXISTS event_outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, subject TEXT NOT NULL, payload BLOB NOT NULL);`
+
+const PostgresSchema = `CREATE TABLE IF NOT EXISTS event_outbox (seq BIGSERIAL PRIMARY KEY, id TEXT UNIQUE NOT NULL, subject TEXT NOT NULL, payload BYTEA NOT NULL);`
 
 type Outbox struct{ db *sql.DB }
 
@@ -35,6 +38,22 @@ func Open(path string) (*Outbox, error) {
 	}
 	return &Outbox{db: db}, nil
 }
+
+func OpenPostgres(dsn string) (*Outbox, error) {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(4)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err = db.ExecContext(ctx, PostgresSchema); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return &Outbox{db: db}, nil
+}
+
 func Wrap(db *sql.DB) *Outbox  { return &Outbox{db: db} }
 func (o *Outbox) Close() error { return o.db.Close() }
 
@@ -50,7 +69,7 @@ func Enqueue(tx *sql.Tx, subject string, e events.Envelope) error {
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(`INSERT INTO event_outbox(id,subject,payload) VALUES(?,?,?)`, e.ID, subject, b)
+	_, err = tx.Exec(`INSERT INTO event_outbox(id,subject,payload) VALUES($1,$2,$3)`, e.ID, subject, b)
 	return err
 }
 
@@ -151,7 +170,7 @@ func (o *Outbox) publish(ctx context.Context, js nats.JetStreamContext) error {
 		if _, err = js.Publish(subject, body, nats.MsgId(id), nats.Context(ctx)); err != nil {
 			return err
 		}
-		if _, err = o.db.ExecContext(ctx, `DELETE FROM event_outbox WHERE seq=?`, seq); err != nil {
+		if _, err = o.db.ExecContext(ctx, `DELETE FROM event_outbox WHERE seq=$1`, seq); err != nil {
 			return err
 		}
 	}

@@ -4,20 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"github.com/hieudang-lxp/ai-gateway/backend/internal/eventbus"
-	"github.com/hieudang-lxp/ai-gateway/backend/internal/pricing"
-	"github.com/hieudang-lxp/ai-gateway/backend/internal/usage"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/hieudang-lxp/ai-gateway/backend/internal/eventbus"
+	"github.com/hieudang-lxp/ai-gateway/backend/internal/pricing"
+	"github.com/hieudang-lxp/ai-gateway/backend/internal/usage"
 )
 
 func main() {
 	addr := flag.String("addr", ":8789", "internal health address")
-	db := flag.String("db", "/data/collector.db", "durable collector outbox")
+	databaseURL := flag.String("database-url", os.Getenv("DATABASE_URL"), "PostgreSQL collector database URL")
+	db := flag.String("db", "", "legacy SQLite outbox path (used only without DATABASE_URL)")
 	natsURL := flag.String("nats-url", os.Getenv("NATS_URL"), "NATS URL")
 	codex := flag.String("codex-home", "/sources/codex", "Codex logs")
 	claude := flag.String("claude-projects", "/sources/claude", "Claude logs")
@@ -27,7 +29,16 @@ func main() {
 	if *natsURL == "" {
 		log.Fatal("NATS_URL is required")
 	}
-	outbox, err := eventbus.Open(*db)
+	var outbox *eventbus.Outbox
+	var err error
+	switch {
+	case *databaseURL != "":
+		outbox, err = eventbus.OpenPostgres(*databaseURL)
+	case *db != "":
+		outbox, err = eventbus.Open(*db)
+	default:
+		log.Fatal("DATABASE_URL is required (or explicitly pass -db for legacy SQLite)")
+	}
 	if err != nil {
 		log.Fatal(err)
 	}

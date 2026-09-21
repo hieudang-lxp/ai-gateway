@@ -16,10 +16,14 @@ func (s *Store) callEvent(c Call) events.ExternalUsage {
 // EnableEvents backfills old proxy calls once and enables transactional outbox
 // writes for new calls. Invoke before accepting requests.
 func (s *Store) EnableEvents() error {
-	if _, err := s.db.Exec(eventbus.Schema + `CREATE TABLE IF NOT EXISTS gateway_event_state(id INTEGER PRIMARY KEY CHECK(id=1),origin TEXT NOT NULL,last_id INTEGER NOT NULL);`); err != nil {
+	outboxSchema := eventbus.Schema
+	if s.postgres {
+		outboxSchema = eventbus.PostgresSchema
+	}
+	if _, err := s.db.Exec(outboxSchema + `CREATE TABLE IF NOT EXISTS gateway_event_state(id INTEGER PRIMARY KEY CHECK(id=1),origin TEXT NOT NULL,last_id BIGINT NOT NULL);`); err != nil {
 		return err
 	}
-	if _, err := s.db.Exec(`INSERT OR IGNORE INTO gateway_event_state VALUES(1,?,0)`, uuid.NewString()); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO gateway_event_state VALUES(1,$1,0) ON CONFLICT DO NOTHING`, uuid.NewString()); err != nil {
 		return err
 	}
 	var after int64
@@ -47,7 +51,7 @@ func (s *Store) EnableEvents() error {
 			return err
 		}
 		after = calls[len(calls)-1].ID
-		if _, err = tx.Exec(`UPDATE gateway_event_state SET last_id=? WHERE id=1`, after); err != nil {
+		if _, err = tx.Exec(`UPDATE gateway_event_state SET last_id=$1 WHERE id=1`, after); err != nil {
 			tx.Rollback()
 			return err
 		}

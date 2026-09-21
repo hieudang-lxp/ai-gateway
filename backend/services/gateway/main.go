@@ -31,6 +31,10 @@ import (
 func main() {
 	log.SetFlags(log.LstdFlags)
 	log.SetOutput(os.Stderr)
+	if len(os.Args) > 1 && os.Args[1] == "migrate-sqlite" {
+		runMigrateSQLite(os.Args[2:])
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "stats" {
 		runStats(os.Args[2:])
 		return
@@ -53,6 +57,7 @@ Usage:
   gateway [serve flags]    Run the proxy + local dashboard API (default)
   gateway stats [flags]    Show usage & cost totals
   gateway api [flags]      Run the cloud dashboard API (Turso-backed, for Render)
+  gateway migrate-sqlite   Copy an offline SQLite snapshot into PostgreSQL
 
 Point your tools at it:
   export ANTHROPIC_BASE_URL=http://localhost:8788
@@ -90,6 +95,7 @@ func runServe(args []string) {
 	addr := fs.String("addr", "localhost:8788", "listen address")
 	upstream := fs.String("upstream", "https://api.anthropic.com", "upstream Anthropic base URL")
 	dbPath := fs.String("db", dataPath("gateway.db"), "path to the SQLite store")
+	databaseURL := fs.String("database-url", os.Getenv("DATABASE_URL"), "gateway PostgreSQL URL; preferred over legacy SQLite -db")
 	pricingPath := fs.String("pricing", configPath("pricing.json"), "path to pricing.json")
 	config := fs.String("config", configPath("gateway.yaml"), "path to gateway.yaml")
 	tursoURL := fs.String("turso-url", os.Getenv("TURSO_DATABASE_URL"), "libsql URL; empty disables sync")
@@ -97,7 +103,13 @@ func runServe(args []string) {
 	fs.Parse(args)
 
 	pr := pricing.Load(*pricingPath)
-	st, err := store.Open(*dbPath)
+	var st *store.Store
+	var err error
+	if *databaseURL != "" {
+		st, err = store.OpenPostgres(*databaseURL)
+	} else {
+		st, err = store.Open(*dbPath)
+	}
 	if err != nil {
 		log.Fatalf("open store: %v", err)
 	}
@@ -152,6 +164,12 @@ func runServe(args []string) {
 		mux.Handle("/dashboard/", http.StripPrefix("/dashboard/", http.FileServer(http.Dir(*dashboard))))
 	}
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := st.Ping(ctx); err != nil {
+			http.Error(w, "gateway storage unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintln(w, `{"status":"ok"}`)
 	})
@@ -244,9 +262,16 @@ func runAPI(args []string) {
 func runStats(args []string) {
 	fs := flag.NewFlagSet("stats", flag.ExitOnError)
 	dbPath := fs.String("db", dataPath("gateway.db"), "path to the SQLite store")
+	databaseURL := fs.String("database-url", os.Getenv("DATABASE_URL"), "gateway PostgreSQL URL; preferred over legacy SQLite -db")
 	fs.Parse(args)
 
-	st, err := store.Open(*dbPath)
+	var st *store.Store
+	var err error
+	if *databaseURL != "" {
+		st, err = store.OpenPostgres(*databaseURL)
+	} else {
+		st, err = store.Open(*dbPath)
+	}
 	if err != nil {
 		log.Fatalf("open store: %v", err)
 	}

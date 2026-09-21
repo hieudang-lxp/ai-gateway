@@ -11,7 +11,7 @@ type CostEvent struct {
 
 func (s *Store) CostEvents(cutoff time.Time) ([]CostEvent, error) {
 	rows, err := s.db.Query(
-		`SELECT ts, est_cost_usd FROM calls WHERE ts >= ? ORDER BY ts ASC`, cutoff.Unix())
+		`SELECT ts, est_cost_usd FROM calls WHERE ts >= $1 ORDER BY ts ASC`, cutoff.Unix())
 	if err != nil {
 		return nil, err
 	}
@@ -62,14 +62,25 @@ func (s *Store) scanCalls(query string, args ...any) ([]Call, error) {
 // RecentCalls pages newest-first. beforeID <= 0 starts from the latest row.
 func (s *Store) RecentCalls(limit int, beforeID int64) ([]Call, error) {
 	if beforeID > 0 {
-		return s.scanCalls(`SELECT `+callCols+` FROM calls WHERE id < ? ORDER BY id DESC LIMIT ?`, beforeID, limit)
+		return s.scanCalls(`SELECT `+callCols+` FROM calls WHERE id < $1 ORDER BY id DESC LIMIT $2`, beforeID, limit)
 	}
-	return s.scanCalls(`SELECT `+callCols+` FROM calls ORDER BY id DESC LIMIT ?`, limit)
+	return s.scanCalls(`SELECT `+callCols+` FROM calls ORDER BY id DESC LIMIT $1`, limit)
+}
+
+// RecentDashboardCalls hides rate-limit responses with no usage from the
+// dashboard. Filter before LIMIT so hidden rows cannot create empty pages.
+// Raw history and sync retain every response for diagnostics.
+func (s *Store) RecentDashboardCalls(limit int, beforeID int64) ([]Call, error) {
+	return s.scanCalls(`SELECT `+callCols+` FROM calls
+		WHERE (CAST($1 AS BIGINT) <= 0 OR id < $2)
+		AND NOT (status = 429 AND input_tokens = 0 AND output_tokens = 0
+			AND cache_read_tokens = 0 AND cache_write_tokens = 0 AND est_cost_usd = 0)
+		ORDER BY id DESC LIMIT $3`, beforeID, beforeID, limit)
 }
 
 // CallsAfter returns rows with id > afterID, oldest first (sync batches).
 func (s *Store) CallsAfter(afterID int64, limit int) ([]Call, error) {
-	return s.scanCalls(`SELECT `+callCols+` FROM calls WHERE id > ? ORDER BY id ASC LIMIT ?`, afterID, limit)
+	return s.scanCalls(`SELECT `+callCols+` FROM calls WHERE id > $1 ORDER BY id ASC LIMIT $2`, afterID, limit)
 }
 
 func (s *Store) TotalCalls() (int64, error) {

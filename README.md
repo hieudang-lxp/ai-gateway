@@ -20,11 +20,11 @@ This monorepo runs three independent processes, NATS JetStream and PostgreSQL:
 
 | Service | Responsibility | Owned state |
 | --- | --- | --- |
-| `gateway` | Dashboard/API entry point, HTTP Anthropic proxy, cache and budgets | Existing `gateway.db` SQLite and transactional event outbox |
-| `collector` | Claude/Codex logs and Cursor API polling | Private SQLite outbox in `collector-data` |
+| `gateway` | Dashboard/API entry point, HTTP Anthropic proxy, cache and budgets | PostgreSQL `gateway`: calls, cache, traces and transactional outbox |
+| `collector` | Claude/Codex logs and Cursor API polling | PostgreSQL `collector`: durable event outbox |
 | `usage` | Deduplicate, price and aggregate events | PostgreSQL `usage` database and `usage-prices` cache |
 | `nats` | Durable event transport | `nats-data` JetStream volume |
-| `postgres` | Usage persistence | `usage-data` volume |
+| `postgres` | Three service databases in one local PostgreSQL 17 cluster | `usage-data` volume |
 
 Only gateway port 8788 is published, bound to localhost. The gateway forwards
 `/_usage` to the usage service over HTTP; Anthropic streaming also stays HTTP.
@@ -32,7 +32,7 @@ Producers publish content-free metadata on `usage.ingested.v1`; collection
 status uses `collector.status.v1`. Only the collector mounts IDE logs and the
 Cursor session. Services do not read each other's databases during normal use.
 
-Producers queue locally before publishing and delete only after JetStream
+Producers queue in their own PostgreSQL databases before publishing and delete only after JetStream
 confirms storage. Gateway call/event writes share one transaction. Usage
 acknowledges after PostgreSQL commits; event receipts, source/event identities
 and alias tombstones prevent replay from double-counting. Statuses follow
@@ -161,7 +161,7 @@ fee. Event counts are provider-specific and should not be compared as equal unit
 
 ### Host paths and configuration
 
-Configure host paths through `GATEWAY_DATA_DIR`, `GATEWAY_CONFIG_DIR`,
+Configure host paths through `GATEWAY_CONFIG_DIR`,
 `CODEX_SESSIONS_DIR`, `CODEX_ARCHIVED_DIR`, `CLAUDE_PROJECTS_DIR`,
 `CURSOR_STATE_DIR`, and `GATEWAY_PORT`. See `compose.yaml` for macOS defaults;
 set the Cursor state directory for Linux/Windows hosts. Mount its directory, not
@@ -171,7 +171,8 @@ The collector reads only `cursorAuth/accessToken`, `cursorAuth/cachedEmail` and
 
 | Variable | Default host path/value | Purpose |
 | --- | --- | --- |
-| `GATEWAY_DATA_DIR` | `$HOME/.local/share/ai-gateway` | Gateway SQLite proxy history, cache and event outbox |
+| `MIGRATION_DIR` | `$HOME/.local/share/ai-gateway/postgres-migration` | Offline SQLite snapshots mounted only by the migration profile |
+| `POSTGRES_PASSWORD` | `local-ai-gateway` | Local development database password; set before creating the PostgreSQL volume |
 | `GATEWAY_CONFIG_DIR` | `$HOME/.config/ai-gateway` | Optional `pricing.json` and `gateway.yaml`; mounted read-only |
 | `CODEX_SESSIONS_DIR` | `$HOME/.codex/sessions` | Active Codex sessions |
 | `CODEX_ARCHIVED_DIR` | `$HOME/.codex/archived_sessions` | Archived Codex sessions |
@@ -202,7 +203,7 @@ curl 'http://localhost:8788/_usage?days=30'  # 0 = all collected history
 curl http://localhost:8788/healthz
 ```
 
-`/healthz` checks the HTTP service; `/_usage` includes each collector's health.
+`/healthz` checks HTTP and the gateway database; `/_usage` includes each collector's health.
 Confirm `sources.claude_code.state`, `sources.codex.state`, and
 `sources.cursor.state` are `ok`, with non-null `last_success` values. Each source
 with recorded activity should have entries in `rows`; `ok` with zero rows only
@@ -234,51 +235,114 @@ external usage is not synced to Turso by the proxy's existing sync mechanism.
 ```sh
 docker compose up -d --build   # rebuild after pulling code updates
 docker compose restart       # reload host configuration
-docker compose stop          # pause; preserves host database
+docker compose stop          # pause; preserves PostgreSQL volumes
 docker compose start         # resume
-docker compose down          # remove container/network; host data remains
+docker compose down          # remove containers/network; database volumes remain
 ```
 
-Proxy state is in `GATEWAY_DATA_DIR`, outside the container. Back up a live
-`gateway.db` with SQLite's `.backup` command (rather than copying only the main
-file while WAL writes are active). Protect that directory as account usage data.
-Unified usage is in `usage-data`; back it up with
-`docker compose exec -T postgres pg_dump -U usage -d usage > usage-backup.sql`.
-Keep collector and NATS volumes too: they can hold events not committed to the
-usage ledger yet. `docker compose down` preserves volumes; `down -v` deletes
-them and must not be used as a routine restart.
+All runtime application tables now live in PostgreSQL: separate databases
+`gateway`, `collector`, and `usage` on the existing `usage-data` volume. The
+`postgres-init` one-shot service creates missing databases on both new and
+existing clusters; it never drops an existing database. Port 5432 is not
+published. This local setup uses the same development owner for all three;
+database separation does not provide role-level isolation.
+
+Back up all databases and retain JetStream state:
+
+```sh
+umask 077
+docker compose exec -T postgres pg_dumpall -U usage > postgres-backup.sql
+```
+
+Restore into a stopped, empty replacement cluster with `psql -U usage -d postgres`
+and that dump; do not load a full dump over live service databases. Preserve
+`nats-data` too: it may hold acknowledged producer events awaiting consumption.
+`docker compose down` preserves volumes; `down -v` deletes them and must not be
+used as a routine restart. Original SQLite files and the legacy
+`collector-data` volume are retained for rollback, not mounted by normal services.
+The collector still reads Cursor's SQLite session file as an external read-only
+source; it does not control or migrate Cursor's own database.
 The only authenticated collector network destination is `api2.cursor.sh`;
 public price downloads go to `raw.githubusercontent.com` without credentials.
 
-### Upgrade an existing single-process installation
+### Migrate an existing SQLite installation to PostgreSQL
 
-The old SQLite ledger is not automatically discarded or replaced. Import a
-consistent snapshot before switching the dashboard to PostgreSQL:
+For a fresh install, just use `docker compose up -d --build`. For existing
+SQLite gateway/collector installations, migrate **before** starting the new
+runtime configuration. Run these commands in the repo root; macOS includes
+`sqlite3` (install it first on other hosts). Use the same Compose project name
+and `POSTGRES_PASSWORD` as the existing deployment.
+
+1. Build, provision the service databases, then pause writers. Back up the
+existing PostgreSQL usage ledger as well as both SQLite files:
 
 ```sh
 docker compose build gateway
-docker compose up -d postgres nats
-docker compose stop gateway collector
+docker compose up -d postgres nats postgres-init
+docker compose stop gateway collector usage
+umask 077
+export MIGRATION_DIR="$HOME/.local/share/ai-gateway/postgres-migration-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$MIGRATION_DIR/collector-raw"
+docker compose exec -T postgres pg_dumpall -U usage > "$MIGRATION_DIR/postgres-before.sql"
 gateway_data="${GATEWAY_DATA_DIR:-$HOME/.local/share/ai-gateway}"
-gateway_snapshot="$gateway_data/gateway.pre-services-$(date +%Y%m%d-%H%M%S).db"
-sqlite3 "$gateway_data/gateway.db" ".backup '$gateway_snapshot'"
-docker compose run --rm --no-deps -v "$gateway_snapshot:/legacy.db:ro" usage -import-sqlite /legacy.db
-docker compose up -d
-docker compose exec -T gateway aictl doctor
+sqlite3 "$gateway_data/gateway.db" ".backup '$MIGRATION_DIR/gateway.db'"
+docker compose cp collector:/data/. "$MIGRATION_DIR/collector-raw/"
+sqlite3 "$MIGRATION_DIR/collector-raw/collector.db" ".backup '$MIGRATION_DIR/collector.db'"
 ```
 
-`sqlite3` is provided by macOS; install it on other hosts before migration.
-The importer reads only accounting rows, retains their IDs and can be rerun
-safely. Proxy history stays in the gateway DB and is also backfilled as events;
-Claude transcripts continue to suppress proxy fallback from unified totals.
-Compare source counts and all four token sums in `external_usage` (snapshot)
-against `usage_events` (PostgreSQL) before resuming collection. New collection
-can subsequently increase the totals. Keep the snapshot for rollback.
+The collector copy includes its WAL files and is made only after stopping it.
+For the older single-process version, there is no collector container/outbox:
+skip its copy and collector migration. Never pass a live WAL database as a
+migration source; use the completed `.backup` snapshots.
 
-To roll back temporarily, stop `collector`, `usage` and `gateway`, then run the
-previous Git revision's Compose setup against the retained gateway DB. Usage
-collected only after the split is in PostgreSQL and must be exported/migrated
-separately; the old gateway DB is not a mirror of the new usage ledger.
+2. Copy gateway history and any queued collector events:
+
+```sh
+docker compose --profile migration run --rm migrate
+docker compose --profile migration run --rm \
+  -e 'DATABASE_URL=postgres://usage@postgres:5432/collector?sslmode=disable' \
+  migrate -kind collector -source /migration/collector.db
+```
+
+Each migration copies and verifies every row of the supported tables in one
+transaction, including original call IDs, trace fields, cache bodies, sync
+checkpoints, outbox payloads/IDs, and the gateway event origin. Output reports
+row counts and SHA-256 checksums per table. Destination tables must be empty;
+a mismatch or unknown source table rolls back the copy. An identical completed
+snapshot can be rerun safely after services resume; a changed snapshot is rejected.
+Original sources are never deleted. New PostgreSQL IDs continue above the copied
+IDs, and preserved event origins prevent duplicate backfills into usage.
+
+3. If upgrading from the **single-process** version, import the old unified
+usage ledger too (skip this when the `usage` service already owns your history):
+
+```sh
+docker compose run --rm --no-deps \
+  -v "$MIGRATION_DIR/gateway.db:/legacy.db:ro" usage -import-sqlite /legacy.db
+```
+
+4. Start and verify:
+
+```sh
+docker compose up -d
+docker compose exec -T gateway aictl doctor
+docker compose exec -T postgres psql -U usage -d gateway -c 'SELECT count(*) FROM calls'
+docker compose exec -T postgres psql -U usage -d collector -c 'SELECT count(*) FROM event_outbox'
+```
+
+Compare migration counts/checksums before restart and usage token totals before
+and after the cutover; subsequent collection legitimately increases totals.
+Outboxes should drain when NATS and the usage consumer are healthy. Keep
+`MIGRATION_DIR` and the original files as private backups. If migration fails,
+leave new writers stopped, fix the reported issue and rerun the same snapshots.
+To roll back before accepting new writes, use the previous Git revision and
+retained SQLite state plus the PostgreSQL backup. After new writes occur,
+PostgreSQL contains newer calls/outbox state: export those before rolling back;
+old SQLite files are not mirrors of the running databases.
+
+Standalone legacy SQLite/Turso commands remain available for compatibility and
+migration testing. Docker services always set `DATABASE_URL`; the collector
+requires explicit `-db` to opt into legacy SQLite outside Docker.
 
 Unknown local routes now return a local 404 without calling Anthropic or
 recording a model call. Only `POST /v1/messages` is usage-accounted; model
@@ -297,6 +361,8 @@ not prompts or credentials. Historical `unknown` rows remain visible as
 “Unidentified request”: their URL and request model were never stored, so they
 cannot be reconstructed without separate logs. The migration does not guess
 model names or delete historical rows, even those with HTTP 200 and zero usage.
+Recent calls hides HTTP 429 responses only when all four token counts and cost
+are zero. Filtering happens before pagination; raw history and sync retain them.
 
 ## Terminal companion: `aictl`
 
@@ -414,9 +480,10 @@ Relevant implementation entry points:
 
 - `backend/internal/usage/`: provider parsers, `collector.go` for polling and `summary.go` for the HTTP summary API.
 - `backend/internal/aictl/`: CLI logic; `cli/aictl/main.go` handles process exit only.
-- `backend/internal/eventbus/`: SQLite outbox, JetStream publisher and durable consumer.
+- `backend/internal/eventbus/`: PostgreSQL outbox, JetStream publisher and durable consumer; explicit legacy SQLite support.
 - `backend/internal/ledger/`: PostgreSQL schema, usage reads and explicit legacy import.
-- `backend/internal/store/usage.go`: idempotent imports and consistent summaries.
+- `backend/internal/store/`: gateway PostgreSQL schema, calls/cache/outbox, plus legacy SQLite compatibility.
+- `backend/internal/migration/`: transactional SQLite snapshot copy, checksum verification and safe reruns.
 - `backend/internal/pricing/catalog.go`: hourly catalog refresh, disk cache and Codex estimates.
 - `frontend/src/features/usage/`: unified usage, period controls and source status.
 - `frontend/src/features/proxy/`: proxy budgets, cache, charts and request diagnostics.
@@ -436,9 +503,9 @@ requests routed through it; they do not intercept Codex or Cursor requests.
 Back up the live SQLite database using SQLite's backup API, then disable/unload
 the previous agent to free port 8788 before starting Compose. For example, save
 a timestamped backup under `~/.local/share/ai-gateway/gateway.before-docker-*.db`.
-The gateway reuses that directory and preserves the existing calls database.
-If the installation already contains unified usage, follow the single-process
-upgrade steps above to import its history into PostgreSQL before resuming.
+Follow the PostgreSQL migration steps above to import gateway history (and the
+old unified ledger, if present) before starting the new services. The source
+SQLite file remains a rollback snapshot; Docker no longer writes to it.
 
 For the existing `com.hieudang.ai-gateway` installation (adjust the label/path
 if yours differs):
@@ -446,10 +513,10 @@ if yours differs):
 ```sh
 launchctl disable gui/$(id -u)/com.hieudang.ai-gateway
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.hieudang.ai-gateway.plist
-docker compose up -d --build
+# Complete the SQLite-to-PostgreSQL migration above, then start Compose.
 ```
 
-Rollback to the previous installed binary (the additional usage table is harmless):
+Before any new PostgreSQL writes, rollback to the previous installed binary:
 
 ```sh
 docker compose down

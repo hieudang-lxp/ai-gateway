@@ -141,7 +141,7 @@ func (s *server) RecentCalls(ctx context.Context, req *connect.Request[gatewayv1
 	if limit > 200 {
 		limit = 200
 	}
-	calls, err := s.st.RecentCalls(limit, req.Msg.BeforeId)
+	calls, err := s.st.RecentDashboardCalls(limit, req.Msg.BeforeId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
