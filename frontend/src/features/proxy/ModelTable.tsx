@@ -1,31 +1,37 @@
+import { formatNumber } from "@/i18n/format";
+import { useTranslation } from "react-i18next";
+import { ProxyQueryStatus } from "./ProxyQueryStatus";
 import { useQuery } from "@connectrpc/connect-query";
 import { Card } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { StatsService } from "../../gen/gateway/v1/stats_pb";
 import { useCurrency } from "../currency/useCurrency";
 
-const n = (v: bigint) => Number(v).toLocaleString();
+const n = (v: bigint) => formatNumber(Number(v));
 
 export function ModelTable() {
-  const { data } = useQuery(StatsService.method.modelBreakdown, { days: 30 });
+  const { t } = useTranslation("usage");
+  const { data, error, isPending } = useQuery(StatsService.method.modelBreakdown, { days: 30 });
   const { fmt } = useCurrency();
   const rows = data?.rows ?? [];
+  if (!data) return <ProxyQueryStatus error={error} pending={isPending} />;
   return (
-    <Card className="gap-0 p-6">
+    <Card data-motion="proxy-models" className="gap-0 p-6">
+      <ProxyQueryStatus error={error} />
       <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-sky-900">
-        Models — last 30 days
+        {t("models30")}
       </h2>
       <div className="overflow-x-auto">
         <Table className="w-full text-sm">
           <TableHeader>
             <TableRow className="border-b border-sky-100 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-              <TableHead className="py-2">Model</TableHead>
-              <TableHead className="text-right">Calls</TableHead>
-              <TableHead className="text-right">Input</TableHead>
-              <TableHead className="text-right">Output</TableHead>
-              <TableHead className="text-right">Cache rd</TableHead>
-              <TableHead className="text-right">Cache wr</TableHead>
-              <TableHead className="text-right">Cost</TableHead>
+              <TableHead className="py-2">{t("model")}</TableHead>
+              <TableHead className="text-right">{t("calls")}</TableHead>
+              <TableHead className="text-right">{t("input")}</TableHead>
+              <TableHead className="text-right">{t("output")}</TableHead>
+              <TableHead className="text-right">{t("cacheRead")}</TableHead>
+              <TableHead className="text-right">{t("cacheWrite")}</TableHead>
+              <TableHead className="text-right">{t("cost")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="tabular-nums">
@@ -52,7 +58,7 @@ export function ModelTable() {
       </div>
       {rows.length === 0 && (
         <div className="py-6 text-center text-sm text-slate-400">
-          No calls yet
+          {t("noCalls")}
         </div>
       )}
     </Card>

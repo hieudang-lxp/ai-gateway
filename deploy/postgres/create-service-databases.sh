@@ -9,4 +9,6 @@ SELECT 'CREATE DATABASE sessions' WHERE NOT EXISTS (SELECT FROM pg_database WHER
 \gexec
 SELECT 'CREATE DATABASE insights' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'insights')
 \gexec
+SELECT 'CREATE DATABASE memory_sync' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'memory_sync')
+\gexec
 SQL

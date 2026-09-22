@@ -14,7 +14,7 @@ func TestServiceProxyPreservesSearchAndDetailRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/_sessions?q=repo&source=codex", "/_sessions/detail?source=codex&session_id=s1", "/_insights?period=month"} {
+	for _, path := range []string{"/_sessions?q=repo&source=codex", "/_sessions/detail?source=codex&session_id=s1", "/_insights?period=month", "/_memory"} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		body, _ := io.ReadAll(w.Result().Body)

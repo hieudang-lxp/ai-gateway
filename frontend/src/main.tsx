@@ -6,6 +6,7 @@ import { transport } from "./lib/transport";
 import { TokenGate } from "./features/auth/TokenGate";
 import App from "./App";
 import "./index.css";
+import "./i18n";
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -18,15 +18,23 @@ export function sourceIsFresh(source: SourceStatus | undefined, now: number) {
     Number.isFinite(synced) && now - synced <= source.poll_seconds * 3_000;
 }
 
-export function syncStatus(sources: Record<string, SourceStatus> | undefined, failed: boolean, now: number) {
-  if (failed) return { label: "Connection issue", healthy: false, lastSync: null };
-  if (!sources) return { label: "Connecting…", healthy: false, lastSync: null };
+export function syncState(sources: Record<string, SourceStatus> | undefined, failed: boolean, now: number) {
+  if (failed) return { key: "syncConnectionIssue" as const, healthy: false, lastSync: null };
+  if (!sources) return { key: "syncConnecting" as const, healthy: false, lastSync: null };
   const ready = collectorIds.filter(id => sourceIsFresh(sources[id], now)).length;
   const dates = collectorIds.map(id => Date.parse(sources[id]?.last_success ?? ""));
   return {
-    label: ready === 3 ? "All collectors synced" : `${ready}/3 collectors ready`,
+    key: ready === 3 ? "syncAllReady" as const : "syncReady" as const,
+    values: { ready },
     healthy: ready === 3,
 
     lastSync: dates.every(Number.isFinite) ? new Date(Math.min(...dates)).toISOString() : null,
   };
+}
+
+// Retained for existing non-UI consumers. UI translates syncState at render time.
+export function syncStatus(sources: Record<string, SourceStatus> | undefined, failed: boolean, now: number) {
+  const state = syncState(sources, failed, now);
+  const labels = { syncConnectionIssue: "Connection issue", syncConnecting: "Connecting…", syncAllReady: "All collectors synced", syncReady: `${state.values?.ready}/3 collectors ready` };
+  return { label: labels[state.key], healthy: state.healthy, lastSync: state.lastSync };
 }

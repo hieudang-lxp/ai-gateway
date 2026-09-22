@@ -1,12 +1,16 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { UsageNetwork } from './network';
 import type { Metric } from './timeline';
+import { resolveCameraPose, type CameraSnapshot, type CameraView } from './camera';
 
-type Props = { graph: UsageNetwork; metric: Metric; selected: string; onSelect: (id: string) => void; paused: boolean; reset: number; expanded?: boolean; view?: 'perspective'|'front'|'side'|'above' };
+type Props = { graph: UsageNetwork; metric: Metric; selected: string; onSelect: (id: string) => void; paused: boolean; reset: number; expanded?: boolean; view?: CameraView };
 export default function NetworkScene({graph,metric,selected,onSelect,paused,reset,expanded=false,view="perspective"}:Props) {
+ const { t } = useTranslation('sessions');
  const host=useRef<HTMLDivElement>(null), selectRef=useRef(onSelect), selectedRef=useRef(selected), pausedRef=useRef(paused);
+ const savedCamera=useRef<CameraSnapshot | null>(null);
  const [failed,setFailed]=useState(false);
  useEffect(()=>{selectRef.current=onSelect;selectedRef.current=selected;pausedRef.current=paused;},[onSelect,selected,paused]);
  useEffect(()=>{
@@ -21,12 +25,13 @@ export default function NetworkScene({graph,metric,selected,onSelect,paused,rese
   container.appendChild(renderer.domElement);
   const canvas=renderer.domElement;
   canvas.style.cssText='width:100%;height:100%;display:block;touch-action:pan-y;';
-  canvas.setAttribute('aria-label','3D usage network. Drag to orbit, pinch to zoom. Use the node selector for keyboard access.');
+  canvas.setAttribute('aria-label',t("canvasLabel"));
   canvas.setAttribute('role','img');
   const scene=new THREE.Scene();
   const camera=new THREE.PerspectiveCamera(42,1,0.1,150);
   const controls=new OrbitControls(camera,canvas);
-  controls.enableDamping=true; controls.dampingFactor=.075; controls.enablePan=false;
+  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
+  controls.enableDamping=!reduced.matches; controls.dampingFactor=.075; controls.enablePan=false;
   controls.minDistance=13; controls.maxDistance=55; controls.minPolarAngle=.45; controls.maxPolarAngle=Math.PI-.45;
   controls.touches.ONE=THREE.TOUCH.ROTATE; controls.touches.TWO=THREE.TOUCH.DOLLY_PAN;
   scene.add(new THREE.AmbientLight(0xffffff,2));
@@ -58,8 +63,26 @@ export default function NetworkScene({graph,metric,selected,onSelect,paused,rese
    flows.push({curve,dot,line,from:edge.from,to:edge.to,offset:index*.173});
   });
   const grid=new THREE.GridHelper(42,42,0x283149,0x172034);grid.position.y=-9;grid.material.transparent=true;grid.material.opacity=.35;scene.add(grid);
-  let width=0,height=0;
-  const resize=()=>{width=container.clientWidth;height=container.clientHeight;renderer.setSize(width,height,false);camera.aspect=width/height;const distance=Math.max(28,23/camera.aspect,...graph.nodes.map(node=>Math.abs(node.position[1])*3+7));const direction=view==='front'?[0,0,1]:view==='side'?[.8,.1,.65]:view==='above'?[.1,.85,.65]:[.22,.16,1];camera.far=distance*6;controls.maxDistance=Math.max(55,distance*3);camera.position.set(direction[0],direction[1],direction[2]).normalize().multiplyScalar(distance);camera.lookAt(0,0,0);camera.updateProjectionMatrix();controls.target.set(0,0,0);controls.update();};
+  let width=0,height=0,positioned=false;
+  const rememberCamera=()=>{
+   if(positioned) savedCamera.current={position:camera.position.toArray(),target:controls.target.toArray(),reset,view};
+  };
+  const resize=()=>{
+   width=container.clientWidth;height=container.clientHeight;
+   if(width<=0||height<=0)return;
+   renderer.setSize(width,height,false);
+   camera.aspect=width/height;
+   const distance=Math.max(28,23/camera.aspect,...graph.nodes.map(node=>Math.abs(node.position[1])*3+7));
+   rememberCamera();
+   const pose=resolveCameraPose(savedCamera.current,{reset,view},distance);
+   camera.position.set(...pose.position);controls.target.set(...pose.target);
+   // A narrower viewport or smaller graph must not clamp an existing zoom.
+   const currentDistance=camera.position.distanceTo(controls.target);
+   camera.far=Math.max(distance,currentDistance)*6;
+   controls.maxDistance=Math.max(55,distance*3,currentDistance);
+   camera.lookAt(controls.target);camera.updateProjectionMatrix();controls.update();
+   positioned=true;
+  };
   const observer=new ResizeObserver(resize);observer.observe(container);resize();
   const raycaster=new THREE.Raycaster(), pointer=new THREE.Vector2();let downX=0,downY=0;
   const down=(event:PointerEvent)=>{downX=event.clientX;downY=event.clientY;};
@@ -68,12 +91,12 @@ export default function NetworkScene({graph,metric,selected,onSelect,paused,rese
   canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointerup',up);canvas.addEventListener('webglcontextlost',lost);
   let frame=0,visible=true,time=0,last=0;
   const visibility=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;});visibility.observe(container);
-  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
   const projected=new THREE.Vector3();
   const animate=(now:number)=>{
    frame=requestAnimationFrame(animate);const delta=Math.min((now-last)/1000,.05);last=now;
    if(!visible||document.hidden)return;
    if(!pausedRef.current&&!reduced.matches)time+=delta;
+   controls.enableDamping=!reduced.matches;
    controls.update();
    flows.forEach(flow=>{const related=selectedRef.current==='total'||flow.from===selectedRef.current||flow.to===selectedRef.current; (flow.line.material as THREE.LineBasicMaterial).opacity=related?.38:.07;flow.dot.visible=related;flow.dot.position.copy(flow.curve.getPoint((time*.12+flow.offset)%1));});
    objects.forEach((mesh,id)=>{mesh.material.emissiveIntensity=id===selectedRef.current?1.8:.55;});
@@ -83,7 +106,7 @@ export default function NetworkScene({graph,metric,selected,onSelect,paused,rese
    orderedLabels.forEach(label=>{projected.copy(label.position).project(camera);const x=(projected.x+1)*width/2,y=(-projected.y+1)*height/2+16;label.element.style.display='block';const w=label.element.offsetWidth;const overlaps=placed.some(p=>Math.abs(p.y-y)<24&&Math.abs(p.x-x)<(p.w+w)/2+6);const show=!overlaps&&projected.z<1&&x-w/2>6&&x+w/2<width-6&&y>0&&y<height-20&&(width>550||label.kind==='source'||label.kind==='total'||label.id===selectedRef.current);if(show)placed.push({x,y,w});label.element.style.display=show?'block':'none';label.element.style.left=`${x}px`;label.element.style.top=`${y}px`;label.element.style.color=label.id===selectedRef.current?'#fff':label.kind==='source'?'#e2e8f0':'#d2dbe9';});
   };
   frame=requestAnimationFrame(animate);
-  return()=>{cancelAnimationFrame(frame);observer.disconnect();visibility.disconnect();controls.dispose();canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('webglcontextlost',lost);scene.traverse(object=>{if(object instanceof THREE.Mesh||object instanceof THREE.Line||object instanceof THREE.Sprite){if('geometry' in object)object.geometry.dispose();const materials=Array.isArray(object.material)?object.material:[object.material];materials.forEach(material=>material.dispose());}});glowTexture.dispose();renderer.dispose();canvas.remove();labels.forEach(label=>label.element.remove());};
- },[graph,metric,reset,view]);
- return <div ref={host} className={`relative min-w-0 overflow-hidden ${expanded ? "h-[560px] lg:h-[max(580px,calc(100dvh-300px))]" : "h-[440px] sm:h-[530px]"}`}>{failed&&<div role="status" className="absolute inset-0 z-10 flex items-center justify-center bg-[#080c16] p-8 text-center text-sm text-slate-400">3D rendering is unavailable in this browser. All usage values are available in the node selector and detail panel.</div>}</div>;
+  return()=>{rememberCamera();cancelAnimationFrame(frame);observer.disconnect();visibility.disconnect();controls.dispose();canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('webglcontextlost',lost);scene.traverse(object=>{if(object instanceof THREE.Mesh||object instanceof THREE.Line||object instanceof THREE.Sprite){if('geometry' in object)object.geometry.dispose();const materials=Array.isArray(object.material)?object.material:[object.material];materials.forEach(material=>material.dispose());}});glowTexture.dispose();renderer.dispose();canvas.remove();labels.forEach(label=>label.element.remove());};
+ },[graph,metric,reset,view,t]);
+ return <div ref={host} className={`relative min-w-0 overflow-hidden ${expanded ? "h-[560px] lg:h-[max(580px,calc(100dvh-300px))]" : "h-[440px] sm:h-[530px]"}`}>{failed&&<div role="status" className="absolute inset-0 z-10 flex items-center justify-center bg-[#080c16] p-8 text-center text-sm text-slate-400">{t("renderUnavailable")}</div>}</div>;
 }

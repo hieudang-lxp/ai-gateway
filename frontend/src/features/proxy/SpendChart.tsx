@@ -1,3 +1,6 @@
+import { formatDate } from "@/i18n/format";
+import { useTranslation } from "react-i18next";
+import { ProxyQueryStatus } from "./ProxyQueryStatus";
 import { useQuery } from "@connectrpc/connect-query";
 import { Card } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
@@ -14,20 +17,24 @@ import { useCurrency } from "../currency/useCurrency";
 const OCEAN = "#0369a1";
 
 export function SpendChart() {
-  const { data } = useQuery(StatsService.method.spendSeries, { days: 30 });
+  const { t } = useTranslation("usage");
+  const { data, error, isPending } = useQuery(StatsService.method.spendSeries, { days: 30 });
   const { fmt } = useCurrency();
   const points = (data?.points ?? []).map((p) => ({
-    date: p.date.slice(5), // MM-DD
+    date: formatDate(new Date(`${p.date}T12:00:00`), { month: "short", day: "numeric" }),
     cost: p.costUsd,
     calls: Number(p.calls),
   }));
+  if (!data) return <ProxyQueryStatus error={error} pending={isPending} />;
   return (
-    <Card className="gap-0 p-6">
+    <Card data-motion="proxy-spend-chart" className="gap-0 p-6">
+      <ProxyQueryStatus error={error} />
       <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-sky-900">
-        Spend — last 30 days
+        {t("spend30")}
       </h2>
-      <ChartContainer config={{ cost: { label: "Cost", color: OCEAN } }} className="h-60 w-full">
-        <BarChart data={points} barCategoryGap="25%">
+      {points.length === 0 && <p className="py-4 text-sm text-slate-500">{t("noCalls")}</p>}
+      <ChartContainer config={{ cost: { label: t("cost"), color: OCEAN } }} className="h-60 w-full">
+        <BarChart data={points} barCategoryGap="25%" aria-label={t("spend30")}>
           <CartesianGrid vertical={false} stroke="#e0f2fe" />
           <XAxis
             dataKey="date"
@@ -47,7 +54,7 @@ export function SpendChart() {
           />
           <ChartTooltip
             cursor={{ fill: "#f0f9ff" }}
-            content={<ChartTooltipContent formatter={value => <span className="flex w-full justify-between gap-4"><span>Cost</span><span className="font-semibold tabular-nums">{fmt(Number(value))}</span></span>} />}
+            content={<ChartTooltipContent formatter={value => <span className="flex w-full justify-between gap-4"><span>{t("cost")}</span><span className="font-semibold tabular-nums">{fmt(Number(value))}</span></span>} />}
           />
           <Bar
             dataKey="cost"

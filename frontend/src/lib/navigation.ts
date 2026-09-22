@@ -4,6 +4,7 @@ export const pages = [
   { id: "overview", label: "Overview" },
   { id: "sessions", label: "Sessions" },
   { id: "insights", label: "Insights" },
+  { id: "local-memory", label: "Local Memory" },
   { id: "data-pricing", label: "Data & Pricing" },
 ] as const;
 export type Page = typeof pages[number]["id"];

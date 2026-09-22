@@ -1,6 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiBaseURL } from "../../lib/transport";
 import type { UsageCounts } from "./usage";
+import type { TFunction } from "i18next";
+
+export class UsageFetchError extends Error {
+  readonly status: number;
+  constructor(status: number) { super(`HTTP ${status}`); this.status = status; }
+}
+
+export function usageErrorMessage(error: Error, t: TFunction) {
+  return error instanceof UsageFetchError ? t("collectorUnavailable", { status: error.status }) : t("loadError");
+}
+
+export function sourceStateLabel(state: string | undefined, t: TFunction) {
+  const keys: Record<string, string> = { ok: "synced", starting: "starting", error: "error", stale: "stale", unavailable: "unavailable" };
+  return t(keys[state ?? "unavailable"] ?? "unknown");
+}
 
 export type UsageRow = UsageCounts & {
   source: string;
@@ -34,7 +49,7 @@ export function useUsageSummary(period: string) {
       const url = new URL("/_usage", apiBaseURL);
       url.searchParams.set(period === "month" ? "period" : "days", period);
       const response = await fetch(url, { cache: "no-store" });
-      if (!response.ok) throw new Error(`Collector unavailable (HTTP ${response.status}). Open the local Docker dashboard.`);
+      if (!response.ok) throw new UsageFetchError(response.status);
       return response.json();
     },
     refetchInterval: 30_000,

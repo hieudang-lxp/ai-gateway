@@ -7,7 +7,7 @@ model routing and response caching — plus a Connect RPC stats API and a React
 dashboard. The separate cloud deployment supports Netlify, Render, and Turso
 for proxy statistics; the three-tool collector runs locally.
 
-- `backend/` — Go services `gateway`, `collector`, `usage`, `sessions`, `insights` and the `aictl` CLI
+- `backend/` — Go services `gateway`, `collector`, `usage`, `sessions`, `insights`, `memory-sync` and the `aictl` CLI
 - `proto/` — buf-managed Connect RPC schema
 - `frontend/` — React + Vite dashboard, shadcn/ui + Tailwind CSS
 
@@ -16,7 +16,7 @@ Historical design plans and the former scan service remain available in Git hist
 
 ## Local Docker services: all three tools
 
-This monorepo runs five independent services, NATS JetStream and PostgreSQL:
+This monorepo runs six independent services, NATS JetStream and PostgreSQL:
 
 | Service | Responsibility | Owned state |
 | --- | --- | --- |
@@ -25,15 +25,16 @@ This monorepo runs five independent services, NATS JetStream and PostgreSQL:
 | `usage` | Deduplicate, price and aggregate events | PostgreSQL `usage` database and `usage-prices` cache |
 | `sessions` | Index session metadata, search and request timelines | PostgreSQL `sessions` database and `sessions-prices` cache |
 | `insights` | Period comparisons and session-level evidence | PostgreSQL `insights` database and `insights-prices` cache |
+| `memory-sync` | Optional user-message delivery to an independently deployed Graphiti API | PostgreSQL `memory_sync`: delivery identities/checkpoints |
 | `nats` | Durable event transport | `nats-data` JetStream volume |
-| `postgres` | Five service databases in one local PostgreSQL 17 cluster | `usage-data` volume |
+| `postgres` | Six service databases in one local PostgreSQL 17 cluster | `usage-data` volume |
 
 Only gateway port 8788 is published, bound to localhost. The gateway forwards
 `/_usage`, `/_sessions` (including `/detail`), and `/_insights` to their owning
 services over HTTP; Anthropic streaming also stays HTTP.
 Producers publish content-free metadata on `usage.ingested.v1`; collection
-status uses `collector.status.v1`. Only the collector mounts IDE logs and the
-Cursor session. Services do not read each other's databases during normal use.
+status uses `collector.status.v1`. The collector and optional memory-sync service
+mount source data read-only. Services do not read each other's databases during normal use.
 
 Producers queue in their own PostgreSQL databases before publishing and delete only after JetStream
 confirms storage. Gateway call/event writes share one transaction. Usage
@@ -53,6 +54,62 @@ limit, leaving them queued locally. Monitor disk space and sync freshness.
 This is a single-node local deployment. The Compose PostgreSQL password default
 is for local development; override `POSTGRES_PASSWORD` before initializing a
 different environment. Alert rules and historical price snapshots are not implemented.
+
+### Optional local memory sync
+
+The separately deployed `graphiti-memory` service can ingest all available
+human-authored user messages from Claude Code, Codex, and modern Cursor local
+conversation storage. Short messages are included; assistant replies, tool output,
+and recognized injected messages are excluded. This is separate from usage
+accounting and sends message content only to the configured Graphiti API.
+See [the architecture and HTTP contract](docs/architectural.md).
+
+Deploy Graphiti's API and worker first, with its Ollama extraction/embedding models
+and Neo4j configuration. Set these values in ai-gateway's gitignored `.env`:
+
+```dotenv
+GRAPHITI_URL=http://host.docker.internal:8793
+GRAPHITI_API_TOKEN=the-same-token-configured-on-graphiti
+GRAPHITI_GROUP_ID=personal
+```
+
+Then rebuild and start with `docker compose up -d --build`. With no `GRAPHITI_URL`,
+memory-sync reports `disabled` and does not read transcripts. With a configured
+URL it checks Graphiti readiness, scans historical/local updates, and sends
+deduplicated batches. A dependency outage pauses delivery and retries later.
+Durable acceptance by Graphiti means queued, not successfully extracted yet.
+Invalid or conflicting individual messages are retained in sender quarantine,
+with `blocked` counts, while valid messages continue. Status `pending` includes
+these blocked records. Inspect safe rejection reasons with:
+
+```sh
+docker compose exec -T postgres psql -U usage -d memory_sync -c "SELECT source,state,error,count(*) FROM memory_deliveries d LEFT JOIN memory_delivery_errors e USING(identity) WHERE state='blocked' GROUP BY source,state,error"
+```
+
+```sh
+curl http://localhost:8788/_memory
+docker compose logs --tail 50 memory-sync
+```
+
+Open **Local Memory** in the dashboard (`/dashboard/#local-memory`) for optional
+configuration status, local dependency readiness, per-source delivery counts,
+and the Graphiti extraction queue. Delivery acceptance is distinct from completed
+extraction; Graphiti queue counts also include historical and hook-origin jobs.
+The view refreshes every 30 seconds, retains clearly labeled last-known counts
+on failures, and warns when the service snapshot is over two minutes old.
+Dependency readiness is not a worker heartbeat. The header's **Usage synced**
+indicator only describes usage collectors, not memory extraction.
+
+`/_memory` exposes per-source collection/delivery status without chat text.
+Use Graphiti's authenticated `/v1/status` to inspect dependency readiness and
+extraction backlog. The default group `personal` matches the existing Claude
+memory hooks. An unavailable source, unsupported Cursor schema, or remote/deleted
+conversation absent from local storage cannot be treated as successfully synced.
+
+`CURSOR_STATE_DIR` selects modern Cursor global conversation storage; legacy-only
+workspace storage is reported as unsupported. Graphiti is reached over HTTP, never by mounting
+its queue or reading its `.env`. For a remote Graphiti deployment, use a trusted
+TLS endpoint and configure the same API token on both services.
 
 ### First-time setup (macOS)
 
@@ -201,10 +258,10 @@ docker compose down          # remove containers/network; database volumes remai
 ```
 
 All runtime application tables now live in PostgreSQL: separate databases
-`gateway`, `collector`, `usage`, `sessions`, and `insights` on the existing `usage-data` volume. The
+`gateway`, `collector`, `usage`, `sessions`, `insights`, and `memory_sync` on the existing `usage-data` volume. The
 `postgres-init` one-shot service creates missing databases on both new and
 existing clusters; it never drops an existing database. Port 5432 is not
-published. This local setup uses the same development owner for all five;
+published. This local setup uses the same development owner for all six;
 database separation does not provide role-level isolation.
 
 Back up all databases and retain JetStream state:
@@ -292,7 +349,7 @@ docker compose exec -T postgres psql -U usage -d collector -c 'SELECT count(*) F
 
 ## Terminal companion: `aictl`
 
-The same Go module builds five services and a companion CLI:
+The same Go module builds six services and a companion CLI:
 
 ```text
 backend/
@@ -301,7 +358,8 @@ backend/
 │   ├── collector/ # collection and durable publishing
 │   ├── usage/     # PostgreSQL ledger and summary API
 │   ├── sessions/  # searchable session projection and timeline API
-│   └── insights/  # independent analytics projection and API
+│   ├── insights/  # independent analytics projection and API
+│   └── memory-sync/ # optional user-message synchronization to Graphiti
 ├── cli/aictl/     # read-only commands using gateway HTTP API
 ├── contracts/events/ # versioned service event types
 └── internal/     # service implementations and shared packages
@@ -393,6 +451,43 @@ service does not run during a normal Compose start.
 For frontend iteration, leave Docker running and run `npm run dev` in
 `frontend/`; its API defaults to localhost:8788. The production dashboard uses
 the same origin.
+
+### Dashboard languages and motion
+
+The dashboard supports English, Vietnamese, Korean, Simplified Chinese and
+German. The header language picker changes labels and number/date formatting
+without reloading or changing filters, currency, time ranges or user content.
+The choice is stored locally; blocked browser storage falls back to in-memory
+preferences. Initial language follows supported browser preferences, otherwise
+English. Traditional Chinese is not treated as Simplified Chinese.
+
+Bundled translations live in `frontend/src/i18n/`, split into `common`, `usage`,
+`sessions` and `memory`. Add matching keys and interpolation placeholders to all
+five dictionaries; resource parity tests prevent silently missing translations.
+Keep API/query keys, model IDs and user-generated content language-independent.
+Known errors use stable codes translated at render time. Number/date helpers use
+`Intl`; changing language does not change the selected currency or data timezone.
+
+Page transitions, navigation indicators and control feedback use short native
+animations and respect `prefers-reduced-motion`. Polling and language changes
+do not replay page entrances or reset the network camera. Explicit camera reset
+and view controls still reposition the network. The original sky-blue theme,
+typography, spacing and rounded cards are retained; i18n/motion do not replace
+the visual design. Language selection uses the same shadcn/Radix Select as other
+dashboard filters, including keyboard navigation, focus restoration and menu
+animations. Motion uses the existing Tailwind + `tw-animate-css` stack; no new
+animation dependency is required.
+
+Named `data-motion` regions reveal once per page visit with capped stagger delays.
+Use stable IDs (never translated labels); `data-motion-reveal="false"` opts a
+region into update feedback only. Optional `data-motion-update` signatures must
+contain raw values, not localized output or polling timestamps, so unchanged
+polls and language changes do not flash. `motion-card` enables hover lift only on
+selected leaf cards; `motion-loading` is reserved for real pending states. The
+observer removes timers/listeners on page changes and honors reduced motion.
+See the
+[design spec](docs/superpowers/specs/2026-09-22-dashboard-i18n-motion-design.md)
+and [implementation plan](docs/superpowers/plans/2026-09-22-dashboard-i18n-motion.md).
 
 UI primitives come from [shadcn/ui](https://ui.shadcn.com): Select, Button, Card,
 Table, Badge, Input, Label, Alert, Accordion, Progress, Toggle Group, Navigation

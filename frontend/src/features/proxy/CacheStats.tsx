@@ -1,22 +1,29 @@
+import { useTranslation } from "react-i18next";
+import { ProxyQueryStatus } from "./ProxyQueryStatus";
 import { useQuery } from "@connectrpc/connect-query";
 import { Card } from "@/components/ui/card";
 import { StatsService } from "../../gen/gateway/v1/stats_pb";
-import { compactTokens } from "../../lib/format";
+import { formatNumber } from "@/i18n/format";
+const compactTokens = (value: bigint) => formatNumber(Number(value), { notation: "compact", maximumFractionDigits: 1 });
 import { useCurrency } from "../currency/useCurrency";
 
 function Tile({
+  id,
+  update,
   label,
   value,
   sub,
   title,
 }: {
+  id: string;
+  update: string | number | bigint;
   label: string;
   value: string;
   sub?: string;
   title?: string;
 }) {
   return (
-    <Card className="min-w-0 gap-0 border-0 bg-sky-50/60 p-4 shadow-none" title={title}>
+    <Card data-motion={`proxy-cache-${id}`} data-motion-update={String(update)} className="motion-card min-w-0 gap-0 border-0 bg-sky-50/60 p-4 shadow-none" title={title}>
       <div className="text-xs font-medium text-slate-500">{label}</div>
       <div className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-sky-950 [overflow-wrap:anywhere]">
         {value}
@@ -27,8 +34,9 @@ function Tile({
 }
 
 export function CacheStats() {
-  const { data } = useQuery(StatsService.method.overview, {});
-  const { data: models } = useQuery(StatsService.method.modelBreakdown, {
+  const { t } = useTranslation("usage");
+  const { data, error, isPending } = useQuery(StatsService.method.overview, {});
+  const { data: models, error: modelsError, isPending: modelsPending } = useQuery(StatsService.method.modelBreakdown, {
     days: 30,
   });
   const { fmt } = useCurrency();
@@ -46,40 +54,47 @@ export function CacheStats() {
 
   const total = Number(data?.totalCalls ?? 0n);
   const hits = Number(data?.cacheHits ?? 0n);
-  const rate = total > 0 ? ((hits / total) * 100).toFixed(1) + "%" : "—";
+  const rate = total > 0 ? formatNumber(hits / total, { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "—";
 
+  if (!data || !models) return <ProxyQueryStatus error={error ?? modelsError} pending={isPending || modelsPending} />;
   return (
     <Card className="grid h-full grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-4 p-6">
-      <Tile label="Total calls" value={total.toLocaleString()} sub="all time" />
+      <ProxyQueryStatus error={error ?? modelsError} />
+      <Tile id="calls" update={total} label={t("totalCalls")} value={formatNumber(total)} sub={t("allTime")} />
       <Tile
-        label="Input tokens"
+        id="input" update={input}
+        label={t("inputTokens")}
         value={compactTokens(input)}
-        sub="last 30 days"
-        title="Tokens gửi lên (không tính cache)"
+        sub={t("last30")}
+        title={t("inputTooltip")}
       />
       <Tile
-        label="Output tokens"
+        id="output" update={output}
+        label={t("outputTokens")}
         value={compactTokens(output)}
-        sub="last 30 days"
-        title="Tokens model trả về"
+        sub={t("last30")}
+        title={t("outputTooltip")}
       />
       <Tile
-        label="Cache read"
+        id="read" update={cacheRd}
+        label={t("cacheRead")}
         value={compactTokens(cacheRd)}
-        sub="last 30 days"
-        title="Prompt-cache của Anthropic đọc lại (rẻ hơn 10x input)"
+        sub={t("last30")}
+        title={t("readTooltip")}
       />
       <Tile
-        label="Cache write"
+        id="write" update={cacheWr}
+        label={t("cacheWrite")}
         value={compactTokens(cacheWr)}
-        sub="last 30 days"
-        title="Ghi vào prompt-cache của Anthropic (1.25x input)"
+        sub={t("last30")}
+        title={t("writeTooltip")}
       />
       <Tile
-        label="Gateway cache"
+        id="savings" update={`${data.cacheSavedUsd}:${hits}:${total}`}
+        label={t("gatewayCache")}
         value={fmt(data?.cacheSavedUsd ?? 0)}
-        sub={`${hits.toLocaleString()} hits · ${rate}`}
-        title="Cache exact-match của gateway (bật trong gateway.yaml) — khác prompt-cache của Anthropic"
+        sub={t("cacheHits", { hits: formatNumber(hits), rate })}
+        title={t("gatewayCacheTooltip")}
       />
     </Card>
   );

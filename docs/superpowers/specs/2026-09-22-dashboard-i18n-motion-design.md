@@ -1,5 +1,10 @@
 # Dashboard: giao diện gọn, năm ngôn ngữ và chuyển động mượt
 
+> **Đính chính từ người dùng, 2026-09-22:** Giữ nguyên visual cũ: xanh sky làm màu
+> chủ đạo, nền gradient xanh nhạt, typography, padding, radius, shadow và card.
+> Chỉ bổ sung i18n và animation vào giao diện đó. Các đề xuất trung tính/giảm card
+> bên dưới đã bị thay thế bởi yêu cầu này, không dùng làm căn cứ đổi theme lần nữa.
+
 ## Mục tiêu đã thống nhất
 
 AI Gateway là công cụ theo dõi usage và memory, không phải landing page.
@@ -132,5 +137,6 @@ Giữ nguyên mọi thay đổi backend và tài liệu kiến trúc đang có t
 
 ## Trạng thái
 
-Hướng thiết kế trong chat đã được người dùng duyệt, bao gồm yêu cầu animation.
-Bản spec này đang chờ duyệt trước bước lập kế hoạch và triển khai.
+Người dùng đã duyệt spec và yêu cầu triển khai ngay ngày 2026-09-22.
+Đã triển khai các namespace ngôn ngữ, giao diện gọn và motion dùng API trình duyệt;
+kết quả kiểm thử và triển khai được ghi trong implementation plan cùng ngày.

@@ -15,6 +15,7 @@ services:
       USAGE_URL: http://usage:8790
       SESSIONS_URL: http://sessions:8791
       INSIGHTS_URL: http://insights:8792
+      MEMORY_SYNC_URL: http://memory-sync:8794
       NATS_URL: nats://nats:4222
       DATABASE_URL: postgres://usage@postgres:5432/gateway?sslmode=disable
       PGPASSWORD: ${POSTGRES_PASSWORD:-local-ai-gateway}
@@ -133,6 +134,35 @@ services:
       interval: 10s
       timeout: 5s
       start_period: 30s
+    logging: *logging
+
+  memory-sync:
+    image: ai-gateway-local:latest
+    entrypoint: ["memory-sync"]
+    command: []
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+      GRAPHITI_URL: ${GRAPHITI_URL:-}
+      GRAPHITI_API_TOKEN: ${GRAPHITI_API_TOKEN:-}
+      GRAPHITI_GROUP_ID: ${GRAPHITI_GROUP_ID:-personal}
+      DATABASE_URL: postgres://usage@postgres:5432/memory_sync?sslmode=disable
+      PGPASSWORD: ${POSTGRES_PASSWORD:-local-ai-gateway}
+    volumes:
+      - ${CODEX_SESSIONS_DIR:-${HOME}/.codex/sessions}:/sources/codex/sessions:ro
+      - ${CODEX_ARCHIVED_DIR:-${HOME}/.codex/archived_sessions}:/sources/codex/archived_sessions:ro
+      - ${CLAUDE_PROJECTS_DIR:-${HOME}/.claude/projects}:/sources/claude:ro
+      - ${CURSOR_STATE_DIR:-${HOME}/Library/Application Support/Cursor/User/globalStorage}:/sources/cursor:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8794/healthz"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
     logging: *logging
 
   nats:

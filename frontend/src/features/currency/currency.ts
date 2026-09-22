@@ -1,24 +1,25 @@
 export type Currency = "USD" | "VND";
 
-const usdFmt = new Intl.NumberFormat("en-US", {
+const usdOptions: Intl.NumberFormatOptions = {
   style: "currency",
   currency: "USD",
   minimumFractionDigits: 2,
   maximumFractionDigits: 4,
-});
-const vndFmt = new Intl.NumberFormat("vi-VN", {
+};
+const vndOptions: Intl.NumberFormatOptions = {
   style: "currency",
   currency: "VND",
   maximumFractionDigits: 0,
-});
+};
 
 export function formatMoney(
   usd: number,
   currency: Currency,
   rate: number | null,
+  locale?: string,
 ): string {
-  if (currency === "VND" && rate !== null) return vndFmt.format(usd * rate);
-  return usdFmt.format(usd);
+  if (currency === "VND" && rate !== null) return new Intl.NumberFormat(locale ?? "vi-VN", vndOptions).format(usd * rate);
+  return new Intl.NumberFormat(locale ?? "en-US", usdOptions).format(usd);
 }
 
 export function parseRateResponse(json: unknown): number | null {
@@ -32,9 +33,9 @@ export function parseRateResponse(json: unknown): number | null {
 const CACHE_KEY = "usd_vnd_rate";
 
 export function loadCachedRate(): { rate: number; ts: number } | null {
-  const raw = localStorage.getItem(CACHE_KEY);
-  if (!raw) return null;
   try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
     const v = JSON.parse(raw);
     if (typeof v?.rate === "number" && typeof v?.ts === "number") return v;
   } catch {
@@ -43,5 +44,5 @@ export function loadCachedRate(): { rate: number; ts: number } | null {
 }
 
 export function saveCachedRate(rate: number, ts: number): void {
-  localStorage.setItem(CACHE_KEY, JSON.stringify({ rate, ts }));
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ rate, ts })); } catch { /* Display still works without cached preferences. */ }
 }

@@ -1,4 +1,6 @@
 import type { SessionFilters } from "./types";
+import i18n from '@/i18n';
+import { formatNumber } from '@/i18n/format';
 export function periodParams(period: string) {
   return new URLSearchParams(period === "month" ? { period: "month" } : { days: period });
 }
@@ -22,7 +24,7 @@ export function sessionSelection(hash: string) {
   return source && sessionID ? { source, sessionID } : null;
 }
 export function changeLabel(current: number, previous: number) {
-  if (previous === 0) return current === 0 ? "No change" : "No prior baseline";
-  const change = (current - previous) / previous * 100;
-  return `${change > 0 ? "+" : ""}${change.toLocaleString(undefined, { maximumFractionDigits: 1 })}% vs previous period`;
+  if (previous === 0) return i18n.t(current === 0 ? 'noChange' : 'noBaseline', { ns: 'sessions' });
+  const change = (current - previous) / previous;
+  return i18n.t('change', { ns: 'sessions', value: formatNumber(change, { style: 'percent', maximumFractionDigits: 1, signDisplay: 'exceptZero' }) });
 }

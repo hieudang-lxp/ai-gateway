@@ -3,10 +3,11 @@ import { apiBaseURL } from "../../lib/transport";
 import { periodParams, sessionParams } from "./query";
 import type { InsightsResponse, SessionDetail, SessionFilters, SessionsResponse } from "./types";
 import type { ModelOption } from "./models";
+import { IndexedUsageError } from './errors';
 async function request<T>(path: string, params: URLSearchParams, signal: AbortSignal): Promise<T> {
   const url = new URL(path, apiBaseURL); url.search = params.toString();
   const response = await fetch(url, { signal, cache: "no-store" });
-  if (!response.ok) throw new Error(response.status === 404 ? "This indexed data is not available yet. Check collection status in Data & Pricing." : `Unable to load indexed usage (HTTP ${response.status}). Please retry.`);
+  if (!response.ok) throw new IndexedUsageError(response.status);
   return response.json();
 }
 export function useSessions(filters: SessionFilters) {

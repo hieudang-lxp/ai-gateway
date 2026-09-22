@@ -1,9 +1,5 @@
-
-const fmt = new Intl.NumberFormat("en-US", {
-  notation: "compact",
-  maximumFractionDigits: 2,
-});
+import { formatNumber } from "@/i18n/format";
 
 export function compactTokens(v: bigint | number): string {
-  return fmt.format(Number(v));
+  return formatNumber(Number(v), { notation: "compact", maximumFractionDigits: 2 });
 }

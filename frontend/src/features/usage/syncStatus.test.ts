@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { syncStatus, type collectorIds } from "./syncStatus";
+import { syncStatus, syncState, type collectorIds } from "./syncStatus";
 import type { SourceStatus } from "./useUsageSummary";
+import { createInstance } from "i18next";
+import { usageLocales } from "@/i18n/usage";
 
 describe("collector navigation status", () => {
   const now = Date.parse("2026-09-18T01:00:00Z");
@@ -20,5 +22,14 @@ describe("collector navigation status", () => {
   it("does not hide connection errors behind cached successful data", () => {
     expect(syncStatus(sources(), true, now)).toMatchObject({ healthy: false, label: "Connection issue" });
     expect(syncStatus(undefined, false, now).label).toBe("Connecting…");
+  });
+  it("keeps cached status independent of the display language", async () => {
+    const state = syncState(sources(), true, now);
+    const translations = createInstance();
+    await translations.init({ lng: "en", resources: { en: { usage: usageLocales.en }, de: { usage: usageLocales.de } }, defaultNS: "usage" });
+    expect(translations.t(state.key, state.values)).toBe("Connection issue");
+    await translations.changeLanguage("de");
+    expect(translations.t(state.key, state.values)).toBe("Verbindungsproblem");
+    expect(syncState({}, false, now)).toMatchObject({ key: "syncReady", values: { ready: 0 }, healthy: false });
   });
 });

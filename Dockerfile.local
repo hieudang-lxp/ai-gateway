@@ -16,6 +16,7 @@ RUN CGO_ENABLED=0 go build -trimpath -o /collector ./services/collector
 RUN CGO_ENABLED=0 go build -trimpath -o /usage ./services/usage
 RUN CGO_ENABLED=0 go build -trimpath -o /sessions ./services/sessions
 RUN CGO_ENABLED=0 go build -trimpath -o /insights ./services/insights
+RUN CGO_ENABLED=0 go build -trimpath -o /memory-sync ./services/memory-sync
 
 FROM alpine:3.23
 RUN apk add --no-cache ca-certificates tzdata
@@ -25,6 +26,7 @@ COPY --from=backend /collector /usr/local/bin/collector
 COPY --from=backend /usage /usr/local/bin/usage
 COPY --from=backend /sessions /usr/local/bin/sessions
 COPY --from=backend /insights /usr/local/bin/insights
+COPY --from=backend /memory-sync /usr/local/bin/memory-sync
 COPY --from=frontend /app/dist /app/dashboard
 ENV TZ=Asia/Ho_Chi_Minh
 EXPOSE 8788

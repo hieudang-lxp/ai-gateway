@@ -1,11 +1,13 @@
 const KEY = "dashboard_token";
+let volatileToken: string | undefined;
 
 export function getToken(): string {
-  return localStorage.getItem(KEY) ?? "";
+  if (volatileToken !== undefined) return volatileToken;
+  try { return localStorage.getItem(KEY) ?? ""; } catch { return ""; }
 }
 export function setToken(t: string): void {
-  localStorage.setItem(KEY, t);
+  try { localStorage.setItem(KEY, t); volatileToken = undefined; } catch { volatileToken = t; }
 }
 export function clearToken(): void {
-  localStorage.removeItem(KEY);
+  try { localStorage.removeItem(KEY); volatileToken = undefined; } catch { volatileToken = ""; }
 }
